@@ -369,18 +369,20 @@ export function resolveContextTokensForModel(params: {
   fallbackContextTokens?: number;
   allowAsyncLoad?: boolean;
 }): number | undefined {
-  if (typeof params.contextTokensOverride === "number" && params.contextTokensOverride > 0) {
-    return params.contextTokensOverride;
-  }
-
   const ref = resolveProviderModelRef({
     provider: params.provider,
     model: params.model,
   });
+  const override =
+    typeof params.contextTokensOverride === "number" && params.contextTokensOverride > 0
+      ? params.contextTokensOverride
+      : undefined;
+  const capOverride = (contextTokens: number) =>
+    override !== undefined ? Math.min(override, contextTokens) : contextTokens;
   const explicitProvider = params.provider?.trim();
   if (ref) {
     if (explicitProvider && isAnthropic1MModel(ref.provider, ref.model)) {
-      return ANTHROPIC_CONTEXT_1M_TOKENS;
+      return capOverride(ANTHROPIC_CONTEXT_1M_TOKENS);
     }
     // Only do the config direct scan when the caller explicitly passed a
     // provider. When provider is inferred from a slash in the model string
@@ -396,13 +398,13 @@ export function resolveContextTokensForModel(params: {
         ref.model,
       );
       if (configuredWindow !== undefined) {
-        return configuredWindow;
+        return capOverride(configuredWindow);
       }
     }
   }
 
   if (explicitProvider && ref && shouldUseAnthropicGa1MContextWindow(ref)) {
-    return ANTHROPIC_CONTEXT_1M_TOKENS;
+    return capOverride(ANTHROPIC_CONTEXT_1M_TOKENS);
   }
 
   // When provider is explicitly given and the model ID is bare (no slash),
@@ -426,7 +428,7 @@ export function resolveContextTokensForModel(params: {
       },
     );
     if (qualifiedResult !== undefined) {
-      return qualifiedResult;
+      return capOverride(qualifiedResult);
     }
   }
 
@@ -437,7 +439,7 @@ export function resolveContextTokensForModel(params: {
     skipRuntimeConfigLoad: Boolean(params.cfg),
   });
   if (bareResult !== undefined) {
-    return bareResult;
+    return capOverride(bareResult);
   }
 
   // When provider is implicit, try qualified as a last resort so inferred
@@ -452,9 +454,12 @@ export function resolveContextTokensForModel(params: {
       },
     );
     if (qualifiedResult !== undefined) {
-      return qualifiedResult;
+      return capOverride(qualifiedResult);
     }
   }
 
+  if (override !== undefined) {
+    return override;
+  }
   return params.fallbackContextTokens;
 }
