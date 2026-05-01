@@ -237,7 +237,7 @@ describe("createTypingCallbacks", () => {
     expect(stop).toHaveBeenCalledTimes(1);
   });
 
-  it("sends stop again when cleanup runs before a pending start settles", async () => {
+  it("issues final cleanup for Feishu-style persistent typing after pending start settles", async () => {
     let resolveStart!: () => void;
     let startCompleted = false;
     let stopsAfterStart = 0;
