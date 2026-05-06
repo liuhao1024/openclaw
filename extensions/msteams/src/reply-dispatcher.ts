@@ -1,3 +1,11 @@
+import {
+  formatChannelProgressDraftLine,
+  formatChannelProgressDraftLineForEntry,
+  resolveChannelPreviewStreamMode,
+  resolveChannelStreamingBlockEnabled,
+  resolveChannelStreamingPreviewToolProgress,
+  resolveChannelStreamingSuppressDefaultToolProgressMessages,
+} from "openclaw/plugin-sdk/channel-streaming";
 import { normalizeOptionalLowercaseString } from "openclaw/plugin-sdk/text-runtime";
 import {
   createChannelMessageReplyPipeline,
@@ -163,8 +171,13 @@ export function createMSTeamsReplyDispatcher(params: {
   streamActiveRef.current = () => streamController.isStreamActive();
   streamCanceledRef.current = () => streamController.wasCanceled();
 
-  const blockStreamingEnabled =
-    typeof msteamsCfg?.blockStreaming === "boolean" ? msteamsCfg.blockStreaming : false;
+  // Resolve block-streaming preference from new-shape config first
+  // (`streaming.mode = "block"` or `streaming.block.enabled = true`), falling
+  // back to the legacy `blockStreaming` boolean.
+  const teamsStreamMode = resolveChannelPreviewStreamMode(msteamsCfg, "partial");
+  const blockStreamingResolved =
+    teamsStreamMode === "block" ? true : resolveChannelStreamingBlockEnabled(msteamsCfg);
+  const blockStreamingEnabled = blockStreamingResolved ?? false;
   const typingIndicatorEnabled =
     typeof msteamsCfg?.typingIndicator === "boolean" ? msteamsCfg.typingIndicator : true;
 
@@ -339,6 +352,120 @@ export function createMSTeamsReplyDispatcher(params: {
       });
   };
 
+  // Pipe agent tool/plan/approval/command events into the stream controller's
+  // progress-draft surface. In "progress" stream mode this lets the live
+  // streaming card show "Searching the schema..." → "Generating SQL..." as
+  // tools fire (instead of the rotating "Thinking..." label sitting unchanged
+  // for the duration of a long tool chain). In other modes these calls are
+  // no-ops on the controller side.
+  const previewToolProgressEnabled = resolveChannelStreamingPreviewToolProgress(msteamsCfg);
+  const suppressDefaultToolProgressMessages =
+    resolveChannelStreamingSuppressDefaultToolProgressMessages(msteamsCfg);
+
+  // Forward the rich pipeline event payload through to the channel-streaming
+  // formatters. The formatters accept the canonical union shape; the pipeline
+  // payload is structurally compatible but tsgo can't see through the
+  // optional-property unions for this signature, so we cast at the boundary.
+  type PipelinePayload = Record<string, unknown>;
+
+  const progressCallbacks = streamController.hasStream()
+    ? {
+        onReasoningStream: async (payload: PipelinePayload) => {
+          const text = typeof payload?.text === "string" ? payload.text : undefined;
+          if (!text) {
+            return;
+          }
+          await streamController.pushProgressLine(text);
+        },
+        onToolStart: async (payload: PipelinePayload) => {
+          const name = typeof payload?.name === "string" ? payload.name : undefined;
+          const detailMode =
+            typeof payload?.detailMode === "string" ? payload.detailMode : undefined;
+          await streamController.pushProgressLine(
+            formatChannelProgressDraftLineForEntry(
+              msteamsCfg,
+              {
+                event: "tool",
+                ...(name ? { name } : {}),
+                ...(typeof payload?.phase === "string" ? { phase: payload.phase } : {}),
+                ...(payload?.args && typeof payload.args === "object"
+                  ? { args: payload.args as Record<string, unknown> }
+                  : {}),
+              },
+              detailMode === "explain" || detailMode === "raw" ? { detailMode } : undefined,
+            ),
+            name ? { toolName: name } : undefined,
+          );
+        },
+        onItemEvent: async (payload: PipelinePayload) => {
+          await streamController.pushProgressLine(
+            formatChannelProgressDraftLineForEntry(msteamsCfg, {
+              event: "item",
+              ...(typeof payload?.kind === "string" ? { itemKind: payload.kind } : {}),
+              ...(typeof payload?.title === "string" ? { title: payload.title } : {}),
+              ...(typeof payload?.name === "string" ? { name: payload.name } : {}),
+              ...(typeof payload?.phase === "string" ? { phase: payload.phase } : {}),
+              ...(typeof payload?.status === "string" ? { status: payload.status } : {}),
+              ...(typeof payload?.summary === "string" ? { summary: payload.summary } : {}),
+              ...(typeof payload?.progressText === "string"
+                ? { progressText: payload.progressText }
+                : {}),
+              ...(typeof payload?.meta === "string" ? { meta: payload.meta } : {}),
+            }),
+          );
+        },
+        onPlanUpdate: async (payload: PipelinePayload) => {
+          if (payload?.phase !== "update") {
+            return;
+          }
+          await streamController.pushProgressLine(
+            formatChannelProgressDraftLine({
+              event: "plan",
+              phase: payload.phase as string,
+              ...(typeof payload?.title === "string" ? { title: payload.title } : {}),
+              ...(typeof payload?.explanation === "string"
+                ? { explanation: payload.explanation }
+                : {}),
+              ...(Array.isArray(payload?.steps) &&
+              payload.steps.every((s: unknown) => typeof s === "string")
+                ? { steps: payload.steps as string[] }
+                : {}),
+            }),
+          );
+        },
+        onApprovalEvent: async (payload: PipelinePayload) => {
+          if (payload?.phase !== "requested") {
+            return;
+          }
+          await streamController.pushProgressLine(
+            formatChannelProgressDraftLine({
+              event: "approval",
+              phase: payload.phase as string,
+              ...(typeof payload?.title === "string" ? { title: payload.title } : {}),
+              ...(typeof payload?.command === "string" ? { command: payload.command } : {}),
+              ...(typeof payload?.reason === "string" ? { reason: payload.reason } : {}),
+              ...(typeof payload?.message === "string" ? { message: payload.message } : {}),
+            }),
+          );
+        },
+        onCommandOutput: async (payload: PipelinePayload) => {
+          if (payload?.phase !== "end") {
+            return;
+          }
+          await streamController.pushProgressLine(
+            formatChannelProgressDraftLine({
+              event: "command-output",
+              phase: payload.phase as string,
+              ...(typeof payload?.title === "string" ? { title: payload.title } : {}),
+              ...(typeof payload?.name === "string" ? { name: payload.name } : {}),
+              ...(typeof payload?.status === "string" ? { status: payload.status } : {}),
+              ...(typeof payload?.exitCode === "number" ? { exitCode: payload.exitCode } : {}),
+            }),
+          );
+        },
+      }
+    : {};
+
   return {
     dispatcher,
     replyOptions: {
@@ -349,8 +476,18 @@ export function createMSTeamsReplyDispatcher(params: {
               streamController.onPartialReply(payload),
           }
         : {}),
-      disableBlockStreaming:
-        typeof msteamsCfg?.blockStreaming === "boolean" ? !msteamsCfg.blockStreaming : undefined,
+      ...progressCallbacks,
+      // When progress mode is active, suppress openclaw's default block-style
+      // tool-progress messages so they don't duplicate alongside the
+      // streaming card's progress lines.
+      ...(suppressDefaultToolProgressMessages && previewToolProgressEnabled
+        ? { suppressDefaultToolProgressMessages: true }
+        : {}),
+      // Pass-through to the reply pipeline. `false` = "use block streaming"
+      // (the default when streaming.mode=block or streaming.block.enabled=true,
+      // or the legacy blockStreaming=true boolean). `true` = "do not use it".
+      // `undefined` = "no preference" — let the pipeline decide.
+      disableBlockStreaming: blockStreamingResolved == null ? undefined : !blockStreamingResolved,
       onModelSelected,
     },
     markDispatchIdle,

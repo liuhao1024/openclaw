@@ -20,11 +20,14 @@ const mockState = vi.hoisted(() => ({
   createMSTeamsTokenProvider: vi.fn(),
 }));
 
-vi.mock("openclaw/plugin-sdk/msteams", () => ({
+// `loadOutboundMediaFromUrl` is re-exported from msteams's runtime-api which
+// pulls from `openclaw/plugin-sdk/outbound-media` (post-migration). Mock the
+// canonical source so the re-export carries our stub through.
+vi.mock("openclaw/plugin-sdk/outbound-media", () => ({
   loadOutboundMediaFromUrl: mockState.loadOutboundMediaFromUrl,
 }));
 
-vi.mock("openclaw/plugin-sdk/config-runtime", () => ({
+vi.mock("openclaw/plugin-sdk/markdown-table-runtime", () => ({
   resolveMarkdownTableMode: mockState.resolveMarkdownTableMode,
 }));
 
