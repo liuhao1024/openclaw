@@ -518,7 +518,11 @@ describe("monitorMSTeamsProvider lifecycle", () => {
       expect(registerMSTeamsHandlers).toHaveBeenCalled();
     });
 
-    const app = await loadMSTeamsSdkWithAuth.mock.results[0]?.value.then((result) => result.app);
+    const sdkResultPromise = loadMSTeamsSdkWithAuth.mock.results[0]?.value;
+    if (!sdkResultPromise) {
+      throw new Error("expected loadMSTeamsSdkWithAuth result");
+    }
+    const app = (await sdkResultPromise).app;
     const cardActionHandler = app.on.mock.calls.find(
       (call: [string, unknown]) => call[0] === "card.action",
     )?.[1];
@@ -574,7 +578,11 @@ describe("monitorMSTeamsProvider lifecycle", () => {
       expect(registerMSTeamsHandlers).toHaveBeenCalled();
     });
 
-    const app = await loadMSTeamsSdkWithAuth.mock.results[0]?.value.then((result) => result.app);
+    const sdkResultPromise = loadMSTeamsSdkWithAuth.mock.results[0]?.value;
+    if (!sdkResultPromise) {
+      throw new Error("expected loadMSTeamsSdkWithAuth result");
+    }
+    const app = (await sdkResultPromise).app;
     const cardActionHandler = app.on.mock.calls.find(
       (call: [string, unknown]) => call[0] === "card.action",
     )?.[1];
