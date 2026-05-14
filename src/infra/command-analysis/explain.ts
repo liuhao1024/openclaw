@@ -87,20 +87,31 @@ export async function resolveCommandAnalysisSummaryForDisplay(params: {
   cwd?: string | null;
   sanitizeText?: (value: string) => string;
 }): Promise<CommandExplanationSummary | null> {
+  if (params.host !== "node") {
+    const rich = await explainCommandForDisplay(params.commandText);
+    if (!rich) {
+      return null;
+    }
+    const sanitizeText = params.sanitizeText;
+    if (!sanitizeText) {
+      return rich.summary;
+    }
+    return {
+      commandCount: rich.summary.commandCount,
+      nestedCommandCount: rich.summary.nestedCommandCount,
+      riskKinds: rich.summary.riskKinds.map((kind) => sanitizeText(kind)),
+      warningLines: rich.summary.warningLines.map((line) => sanitizeText(line)),
+    };
+  }
+
   const analysis =
-    params.host === "node"
-      ? Array.isArray(params.commandArgv) && params.commandArgv.length > 0
-        ? await analyzeCommandForPolicy({
-            source: "argv",
-            argv: params.commandArgv,
-            cwd: params.cwd ?? undefined,
-          })
-        : null
-      : await analyzeCommandForPolicy({
-          source: "shell",
-          command: params.commandText,
+    Array.isArray(params.commandArgv) && params.commandArgv.length > 0
+      ? await analyzeCommandForPolicy({
+          source: "argv",
+          argv: params.commandArgv,
           cwd: params.cwd ?? undefined,
-        });
+        })
+      : null;
   if (!analysis?.ok) {
     return null;
   }

@@ -839,6 +839,26 @@ describe("exec approvals shell analysis", () => {
           expect(result.segmentSatisfiedBy).toEqual(["allowlist"]);
         });
       });
+
+      it("does not allowlist wrapper payloads when outer arguments are evaluated", async () => {
+        if (process.platform === "win32") {
+          return;
+        }
+        await withShellFixture(["sh", "echo", "id"], async ({ binPath, dir, env }) => {
+          const shellPath = binPath("sh");
+          const echoPath = binPath("echo");
+          const result = await evaluateShellAllowlist({
+            command: `${shellPath} -c 'echo safe' $(id)`,
+            allowlist: [{ pattern: echoPath }],
+            safeBins: new Set(),
+            cwd: dir,
+            env,
+          });
+          expect(result.analysisOk).toBe(false);
+          expect(result.allowlistSatisfied).toBe(false);
+          expect(result.segmentSatisfiedBy).toEqual([]);
+        });
+      });
     });
   });
 });

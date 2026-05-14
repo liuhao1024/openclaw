@@ -437,6 +437,22 @@ describe("resolveAllowAlwaysPatterns", () => {
     expect(patterns).not.toContain("/bin/zsh");
   });
 
+  it("does not persist wrapper payloads when outer arguments are evaluated", async () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const dir = makeTempDir();
+    makeExecutable(dir, "echo");
+    makeExecutable(dir, "id");
+    const { persisted: patterns } = await resolvePersistedPatterns({
+      command: "sh -c 'echo safe' $(id)",
+      dir,
+      env: makePathEnv(dir),
+      safeBins: resolveSafeBins(undefined),
+    });
+    expect(patterns).toStrictEqual([]);
+  });
+
   it("persists the first missed inner binary from shell chains", async () => {
     if (process.platform === "win32") {
       return;

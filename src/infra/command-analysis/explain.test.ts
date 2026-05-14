@@ -88,4 +88,20 @@ describe("command-analysis explanation summary", () => {
       )?.warningLines,
     ).toEqual(["Contains inline-eval: python -c"]);
   });
+
+  it("keeps prompt-only shell risks visible in display summaries", async () => {
+    const summary = await resolveCommandAnalysisSummaryForDisplay({
+      host: "gateway",
+      commandText: "echo $(id)",
+      commandArgv: ["echo", "literal"],
+    });
+
+    expect(summary?.commandCount).toBe(1);
+    expect(summary?.nestedCommandCount).toBe(1);
+    expect(summary?.riskKinds).toEqual(["dynamic-argument", "command-substitution"]);
+    expect(summary?.warningLines).toEqual([
+      "Contains dynamic-argument: echo dynamic argument",
+      "Contains command-substitution",
+    ]);
+  });
 });

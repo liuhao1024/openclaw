@@ -204,7 +204,10 @@ async function planPosixShellCommand(
   const sourcePromptOnlyReasons =
     selectedSteps.length === 0
       ? promptOnlyReasonsFromExplanation(explanation)
-      : promptOnlyReasonsFromUnsupportedRender(explanation);
+      : uniquePromptOnlyReasons([
+          ...promptOnlyReasonsFromUnsupportedRender(explanation),
+          ...promptOnlyReasonsFromRisksOutsideSelectedSteps(explanation.risks, selectedSteps),
+        ]);
   if (selectedSteps.length === 0 && sourcePromptOnlyReasons.length > 0) {
     const unit = createUnit({
       id: "unit-0",
@@ -729,6 +732,23 @@ function promptOnlyReasonsFromRisks(risks: readonly CommandRisk[]): CommandPromp
       "unsupported-shell-syntax",
     ] as const
   ).filter((reason) => reasonSet.has(reason));
+}
+
+function promptOnlyReasonsFromRisksOutsideSelectedSteps(
+  risks: readonly CommandRisk[],
+  selectedSteps: readonly CommandStep[],
+): CommandPromptOnlyReason[] {
+  const skippedRisks = risks.filter(
+    (risk) =>
+      !selectedSteps.some((step) =>
+        stepContainsSpan(step, risk.span.startIndex, risk.span.endIndex),
+      ),
+  );
+  const reasons = promptOnlyReasonsFromRisks(skippedRisks);
+  if (skippedRisks.some((risk) => risk.kind === "dynamic-argument")) {
+    reasons.push("unsupported-shell-syntax");
+  }
+  return uniquePromptOnlyReasons(reasons);
 }
 
 const UNSUPPORTED_RENDER_SHAPES = new Set<CommandShape>([
