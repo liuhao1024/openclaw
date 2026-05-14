@@ -406,7 +406,6 @@ describe("resolveAllowAlwaysPatterns", () => {
       cwd: dir,
       env,
       platform: process.platform,
-      strictInlineEval: false,
     });
 
     expect(result.analysisOk).toBe(true);
