@@ -665,7 +665,7 @@ async function executeSystemRunPhase(
           approvals: phase.approvals.file,
           agentId: phase.agentId,
           analysisOk: phase.policy.analysisOk,
-          commandText: phase.commandText,
+          commandText: phase.shellPayload ?? undefined,
           segments: phase.segments,
           cwd: phase.cwd,
           env: phase.env,

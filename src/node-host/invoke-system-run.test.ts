@@ -1593,6 +1593,46 @@ describe("handleSystemRunInvoke mac app exec host routing", () => {
     }
   });
 
+  it.runIf(process.platform !== "win32")(
+    "persists direct argv allow-always patterns without shell reparsing metacharacters",
+    async () => {
+      const tempDir = createFixtureDir("openclaw-direct-argv-metachar-");
+      const shellParsedPrefix = createTempExecutable({ dir: tempDir, name: "tool" });
+      const approvedExecutable = createTempExecutable({ dir: tempDir, name: "tool;evil" });
+
+      await withTempApprovalsHome({
+        approvals: createAllowlistOnMissApprovals(),
+        run: async () => {
+          const invoke = await runSystemInvoke({
+            preferMacAppExecHost: false,
+            command: [approvedExecutable, "--version"],
+            cwd: tempDir,
+            security: "allowlist",
+            ask: "on-miss",
+            approvalDecision: "allow-always",
+            approved: true,
+            runCommand: vi.fn(async () => createLocalRunResult("metachar-ok")),
+          });
+
+          expect(invoke.runCommand).toHaveBeenCalledTimes(1);
+          expectInvokeOk(invoke.sendInvokeResult, { payloadContains: "metachar-ok" });
+          const allowlist = loadExecApprovals().agents?.main?.allowlist ?? [];
+          expect(allowlist).toEqual([
+            expect.objectContaining({
+              pattern: approvedExecutable,
+              source: "allow-always",
+            }),
+          ]);
+          expect(allowlist).not.toEqual([
+            expect.objectContaining({
+              pattern: shellParsedPrefix,
+            }),
+          ]);
+        },
+      });
+    },
+  );
+
   it("does not persist allow-always approvals for strict inline-eval make carriers", async () => {
     setRuntimeConfigSnapshot({
       tools: {
