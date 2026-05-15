@@ -878,21 +878,22 @@ describe("exec approvals shell analysis", () => {
           const shellPath = binPath("sh");
           const shellRealPath = fs.realpathSync(shellPath);
           const printfPath = binPath("printf");
+          const printfRealPath = fs.realpathSync(printfPath);
           for (const testCase of [
             {
               command: `sh -c '$0 "$@"' printf hi`,
               expectedTokenIndex: 3,
-              expectedCommand: `'${shellRealPath}' -c '$0 "$@"' '${printfPath}' hi`,
+              expectedCommand: `'${shellRealPath}' -c '$0 "$@"' '${printfRealPath}' hi`,
             },
             {
               command: `env sh -c '$0 "$@"' printf hi`,
               expectedTokenIndex: 4,
-              expectedCommand: `'${shellRealPath}' '-c' '$0 "$@"' '${printfPath}' 'hi'`,
+              expectedCommand: `'${shellRealPath}' '-c' '$0 "$@"' '${printfRealPath}' 'hi'`,
             },
             {
               command: `nice sh -c '$0 "$@"' printf hi`,
               expectedTokenIndex: 4,
-              expectedCommand: `'${shellRealPath}' '-c' '$0 "$@"' '${printfPath}' 'hi'`,
+              expectedCommand: `'${shellRealPath}' '-c' '$0 "$@"' '${printfRealPath}' 'hi'`,
             },
           ]) {
             const result = await evaluateShellAllowlist({
@@ -905,7 +906,7 @@ describe("exec approvals shell analysis", () => {
             expect(result.analysisOk, testCase.command).toBe(true);
             expect(result.allowlistSatisfied, testCase.command).toBe(true);
             expect(result.segmentPinnedArgvTokens, testCase.command).toEqual([
-              { tokenIndex: testCase.expectedTokenIndex, replacement: printfPath },
+              { tokenIndex: testCase.expectedTokenIndex, replacement: printfRealPath },
             ]);
             expect(result.authorizationPlan, testCase.command).toBeDefined();
             if (!result.authorizationPlan) {

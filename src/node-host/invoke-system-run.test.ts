@@ -1924,6 +1924,53 @@ describe("handleSystemRunInvoke mac app exec host routing", () => {
   );
 
   it.runIf(process.platform !== "win32")(
+    "pins direct argv positional-carrier symlink executables to canonical paths",
+    () => {
+      const tempDir = createFixtureDir("openclaw-direct-carrier-symlink-");
+      const binDir = path.join(tempDir, "bin");
+      fs.mkdirSync(binDir, { recursive: true });
+      const targetPath = path.join(tempDir, "target-tool");
+      fs.writeFileSync(targetPath, "#!/bin/sh\necho target-tool\n");
+      fs.chmodSync(targetPath, 0o755);
+      const targetRealPath = fs.realpathSync(targetPath);
+      const linkPath = path.join(binDir, "tool");
+      fs.symlinkSync(targetPath, linkPath);
+      const env = { PATH: `${binDir}${path.delimiter}/usr/bin:/bin` };
+      const argv = ["sh", "-c", '$0 "$@"', "tool", "hi"];
+      const analysis = analyzeArgvCommand({ argv, cwd: tempDir, env });
+      const evaluation = evaluateExecAllowlist({
+        analysis,
+        allowlist: [{ pattern: linkPath }],
+        safeBins: new Set(),
+        cwd: tempDir,
+        env,
+      });
+
+      expect(evaluation.allowlistSatisfied).toBe(true);
+      expect(evaluation.segmentPinnedArgvTokens[0]?.replacement).toBe(targetRealPath);
+      const execArgv = resolveSystemRunExecArgv({
+        plannedAllowlistArgv: ["sh", "-c", '$0 "$@"', "tool", "hi"],
+        argv,
+        security: "allowlist",
+        isWindows: false,
+        policy: {
+          approvedByAsk: false,
+          analysisOk: analysis.ok,
+          allowlistSatisfied: evaluation.allowlistSatisfied,
+        },
+        shellCommand: null,
+        segments: analysis.segments,
+        segmentPinnedArgvTokens: evaluation.segmentPinnedArgvTokens,
+        segmentSatisfiedBy: evaluation.segmentSatisfiedBy,
+        cwd: tempDir,
+        env,
+      });
+
+      expect(execArgv?.[3]).toBe(targetRealPath);
+    },
+  );
+
+  it.runIf(process.platform !== "win32")(
     "resolves direct argv positional carriers with the request environment",
     async () => {
       const tempDir = createFixtureDir("openclaw-direct-carrier-env-");
@@ -1932,6 +1979,7 @@ describe("handleSystemRunInvoke mac app exec host routing", () => {
       const toolPath = path.join(binDir, "tool");
       fs.writeFileSync(toolPath, "#!/bin/sh\necho env-tool\n");
       fs.chmodSync(toolPath, 0o755);
+      const toolRealPath = fs.realpathSync(toolPath);
 
       await withTempApprovalsHome({
         approvals: createAllowlistOnMissApprovals({
@@ -1965,7 +2013,7 @@ describe("handleSystemRunInvoke mac app exec host routing", () => {
           });
 
           expect(analysis.allowlistSatisfied).toBe(true);
-          expect(analysis.segmentPinnedArgvTokens[0]?.replacement).toBe(toolPath);
+          expect(analysis.segmentPinnedArgvTokens[0]?.replacement).toBe(toolRealPath);
         },
       });
     },

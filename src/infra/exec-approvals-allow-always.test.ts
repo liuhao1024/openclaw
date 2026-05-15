@@ -175,6 +175,7 @@ describe("resolveAllowAlwaysPatterns", () => {
   }) {
     const dir = makeTempDir();
     const touch = makeExecutable(dir, "touch");
+    const touchRealPath = fs.realpathSync(touch);
     const env = { PATH: `${dir}${path.delimiter}${process.env.PATH ?? ""}` };
     const safeBins = resolveSafeBins(undefined);
     const marker = path.join(dir, "marker");
@@ -187,14 +188,14 @@ describe("resolveAllowAlwaysPatterns", () => {
       safeBins,
     });
     if (params.expectPersisted) {
-      expect(persisted).toEqual([touch]);
+      expect(persisted).toEqual([touchRealPath]);
     } else {
       expect(persisted).toStrictEqual([]);
     }
 
     const second = await evaluateShellAllowlist({
       command,
-      allowlist: [{ pattern: touch }],
+      allowlist: [{ pattern: touchRealPath }],
       safeBins,
       cwd: dir,
       env,
@@ -759,6 +760,42 @@ describe("resolveAllowAlwaysPatterns", () => {
       command: `sh -c '$0 "$1"' touch {marker}`,
       expectPersisted: true,
     });
+  });
+
+  it("persists positional argv carrier symlinks as canonical executable paths", async () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const dir = makeTempDir();
+    const binDir = path.join(dir, "bin");
+    fs.mkdirSync(binDir, { recursive: true });
+    const target = makeExecutable(dir, "target-touch");
+    const targetRealPath = fs.realpathSync(target);
+    const link = path.join(binDir, "touch");
+    fs.symlinkSync(target, link);
+    const env = { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` };
+    const safeBins = resolveSafeBins(undefined);
+    const marker = path.join(dir, "marker");
+    const command = `sh -c '$0 "$1"' touch ${marker}`;
+
+    const { persisted } = await resolvePersistedPatterns({
+      command,
+      dir,
+      env,
+      safeBins,
+    });
+    expect(persisted).toEqual([targetRealPath]);
+
+    const second = await evaluateShellAllowlist({
+      command,
+      allowlist: [{ pattern: targetRealPath }],
+      safeBins,
+      cwd: dir,
+      env,
+      platform: process.platform,
+    });
+    expect(second.allowlistSatisfied).toBe(true);
+    expect(second.segmentPinnedArgvTokens[0]?.replacement).toBe(targetRealPath);
   });
 
   it("persists exec positional argv carrier executables", async () => {

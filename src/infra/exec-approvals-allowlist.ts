@@ -591,8 +591,11 @@ function resolveSegmentAllowlistMatch(params: {
           params.context.allowlist,
           {
             rawExecutable: shellPositionalArgvCandidate.path,
-            resolvedPath: shellPositionalArgvCandidate.path,
-            executableName: path.basename(shellPositionalArgvCandidate.path),
+            resolvedPath: shellPositionalArgvCandidate.resolvedPath,
+            ...(shellPositionalArgvCandidate.resolvedRealPath
+              ? { resolvedRealPath: shellPositionalArgvCandidate.resolvedRealPath }
+              : {}),
+            executableName: shellPositionalArgvCandidate.executableName,
           },
           undefined,
           params.context.platform,
@@ -1061,7 +1064,15 @@ function resolveShellWrapperPositionalArgvCandidate(params: {
   segment: ExecCommandSegment;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
-}): { path: string; tokenIndex: number } | undefined {
+}):
+  | {
+      path: string;
+      resolvedPath: string;
+      resolvedRealPath?: string;
+      executableName: string;
+      tokenIndex: number;
+    }
+  | undefined {
   if (!isShellWrapperSegment(params.segment)) {
     return undefined;
   }
@@ -1104,8 +1115,18 @@ function resolveShellWrapperPositionalArgvCandidate(params: {
   }
 
   const resolution = resolveCommandResolutionFromArgv([carriedExecutable], params.cwd, params.env);
+  const execution = resolveExecutionTargetResolution(resolution);
   const candidatePath = resolveExecutionTargetCandidatePath(resolution, params.cwd);
-  return candidatePath ? { path: candidatePath, tokenIndex: carriedExecutableIndex } : undefined;
+  if (!candidatePath) {
+    return undefined;
+  }
+  return {
+    path: execution?.resolvedRealPath ?? candidatePath,
+    resolvedPath: execution?.resolvedPath ?? candidatePath,
+    ...(execution?.resolvedRealPath ? { resolvedRealPath: execution.resolvedRealPath } : {}),
+    executableName: execution?.executableName ?? path.basename(candidatePath),
+    tokenIndex: carriedExecutableIndex,
+  };
 }
 
 function isDirectShellPositionalCarrierInvocation(command: string): boolean {
