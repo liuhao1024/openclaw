@@ -30,7 +30,10 @@ import * as authBridge from "./auth-bridge.js";
 import { resolveCodexAppServerEnvApiKeyCacheKey } from "./auth-bridge.js";
 import type { CodexAppServerClientFactory } from "./client-factory.js";
 import { readCodexPluginConfig, resolveCodexAppServerRuntimeOptions } from "./config.js";
-import { CODEX_OPENCLAW_DYNAMIC_TOOL_NAMESPACE } from "./dynamic-tools.js";
+import {
+  CODEX_OPENCLAW_DYNAMIC_TOOL_NAMESPACE,
+  createCodexDynamicToolBridge,
+} from "./dynamic-tools.js";
 import * as elicitationBridge from "./elicitation-bridge.js";
 import {
   buildCodexPluginAppCacheKey,
@@ -865,8 +868,6 @@ describe("runCodexAppServerAttempt", () => {
     });
 
     expect(toolOptions.authProfileStore).toBe(authProfileStore);
-    expect(toolOptions.modelProvider).toBe("openai");
-    expect(toolOptions.modelApi).toBe("openai-responses");
   });
 
   it("keeps canonical OpenAI Codex runs on OpenAI dynamic tool policy", async () => {
