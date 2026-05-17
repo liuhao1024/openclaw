@@ -538,6 +538,12 @@ function hasFanoutResultText(text: string, marker: "ALPHA-OK" | "BETA-OK") {
   return new RegExp(`(?:^|\\n)(?:Result:\\s*)?${marker}\\b`, "i").test(text);
 }
 
+function hasAcceptedFanoutBetaSpawn(text: string) {
+  return (
+    /"status"\s*:\s*"accepted"/i.test(text) && /"childSessionKey"\s*:\s*"[^"]*beta/i.test(text)
+  );
+}
+
 function countImageInputs(value: unknown): number {
   const seen = new WeakSet<object>();
   const stack = [value];
@@ -1154,7 +1160,7 @@ function buildAssistantText(
     (scenarioState.subagentFanoutPhase === 2 &&
       prompt &&
       isFanoutCompletionTurn &&
-      /\bBETA-OK\b/.test(scenarioToolOutput)) ||
+      (/\bBETA-OK\b/.test(scenarioToolOutput) || hasAcceptedFanoutBetaSpawn(scenarioToolOutput))) ||
     hasFanoutResultText(allInputText, "BETA-OK")
   ) {
     scenarioState.subagentFanoutPhase = 3;
@@ -1633,7 +1639,9 @@ async function buildResponsesPayload(
   }
   if (
     scenarioState.subagentFanoutPhase === 2 &&
-    (/\bBETA-OK\b/.test(toolOutput) || hasFanoutResultText(allInputText, "BETA-OK"))
+    (/\bBETA-OK\b/.test(toolOutput) ||
+      hasAcceptedFanoutBetaSpawn(toolOutput) ||
+      hasFanoutResultText(allInputText, "BETA-OK"))
   ) {
     scenarioState.subagentFanoutPhase = 3;
     return buildAssistantEvents("subagent-1: ok\nsubagent-2: ok");
