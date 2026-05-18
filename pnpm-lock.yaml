@@ -1083,9 +1083,6 @@ importers:
       '@microsoft/teams.apps':
         specifier: 2.0.11
         version: 2.0.11
-      '@microsoft/teams.common':
-        specifier: 2.0.11
-        version: 2.0.11
       express:
         specifier: 5.2.1
         version: 5.2.1

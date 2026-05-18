@@ -1,6 +1,4 @@
 import * as fs from "node:fs";
-import { createRequire } from "node:module";
-import type { Client as MSTeamsHttpClient } from "@microsoft/teams.common/http";
 import type { MSTeamsCredentials, MSTeamsFederatedCredentials } from "./token.js";
 import { buildOpenClawUserAgentFragment } from "./user-agent.js";
 
@@ -32,13 +30,6 @@ type MSTeamsExpressAdapterCtor = new (
 type TeamsSdkModules = {
   App: typeof import("@microsoft/teams.apps").App;
   ExpressAdapter: MSTeamsExpressAdapterCtor;
-};
-
-type MSTeamsHttpClientCtor = new (options?: {
-  headers?: Record<string, string>;
-}) => MSTeamsHttpClient;
-type TeamsCommonHttpModule = {
-  Client: MSTeamsHttpClientCtor;
 };
 
 /**
@@ -216,15 +207,6 @@ async function loadAzureIdentity(): Promise<AzureIdentityModule> {
 }
 
 let sdkAppPromise: Promise<TeamsSdkModules> | null = null;
-let teamsCommonHttpModule: TeamsCommonHttpModule | null = null;
-const requireTeamsSdkDependency = createRequire(import.meta.url);
-
-function loadTeamsCommonHttpModule(): TeamsCommonHttpModule {
-  teamsCommonHttpModule ??= requireTeamsSdkDependency(
-    "@microsoft/teams.common/http",
-  ) as TeamsCommonHttpModule;
-  return teamsCommonHttpModule;
-}
 
 async function loadSdkModules(): Promise<TeamsSdkModules> {
   sdkAppPromise ??= import("@microsoft/teams.apps").then((m) => ({
@@ -292,12 +274,11 @@ export async function createMSTeamsApp(
 ): Promise<MSTeamsApp> {
   const { App } = await loadSdkModules();
   // Tag outbound SDK HTTP calls with a User-Agent fragment so the Teams
-  // backend can identify OpenClaw traffic for usage telemetry. The SDK only
-  // merges its own `teams.ts[apps]/<sdk-version>` identifier when callers pass
-  // a real Client/factory, not a plain client options object.
-  const { Client } = loadTeamsCommonHttpModule();
+  // backend can identify OpenClaw traffic for usage telemetry. Teams SDK
+  // 2.0.11+ preserves both its own `teams.ts[apps]/<sdk-version>` identifier
+  // and caller-provided User-Agent fragments when plain client headers are used.
   const appOptions: Record<string, unknown> = {
-    client: new Client({ headers: { "User-Agent": buildOpenClawUserAgentFragment() } }),
+    client: { headers: { "User-Agent": buildOpenClawUserAgentFragment() } },
     ...(options?.httpServerAdapter ? { httpServerAdapter: options.httpServerAdapter } : {}),
     ...(options?.messagingEndpoint ? { messagingEndpoint: options.messagingEndpoint } : {}),
     ...(options?.oauthDefaultConnectionName
