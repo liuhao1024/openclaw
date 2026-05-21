@@ -12,6 +12,7 @@ type LifecycleEventLike = Pick<AgentEventPayload, "ts"> & {
     endedAt?: unknown;
     aborted?: unknown;
     stopReason?: unknown;
+    error?: unknown;
   };
 };
 
