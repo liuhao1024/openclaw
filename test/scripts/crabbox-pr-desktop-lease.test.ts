@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const tempDirs: string[] = [];
-const scriptPath = path.resolve("scripts/mantis/pr-desktop-lease.mjs");
+const scriptPath = path.resolve("scripts/crabbox/pr-desktop-lease.mjs");
 const currentHead = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const staleHead = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 function makeTempDir() {
-  const dir = mkdtempSync(path.join(tmpdir(), "mantis-pr-desktop-lease-test-"));
+  const dir = mkdtempSync(path.join(tmpdir(), "crabbox-pr-desktop-lease-test-"));
   tempDirs.push(dir);
   return dir;
 }
@@ -154,8 +154,8 @@ process.exit(0);
       GITHUB_EVENT_PATH: eventPath,
       GITHUB_REPOSITORY: "openclaw/openclaw",
       GITHUB_ACTIONS: "",
-      MANTIS_PR_DESKTOP_LEASE_WEBVNC_READY_POLL_MS: "1",
-      MANTIS_PR_DESKTOP_LEASE_WEBVNC_READY_TIMEOUT_MS: "25",
+      CRABBOX_PR_DESKTOP_LEASE_WEBVNC_READY_POLL_MS: "1",
+      CRABBOX_PR_DESKTOP_LEASE_WEBVNC_READY_TIMEOUT_MS: "25",
       PATH: `${binDir}${path.delimiter}${process.env.PATH || ""}`,
       PR_COMMENTS: JSON.stringify(normalizeCommentsPayload(comments)),
       PR_HEAD_SHA: currentHead,
@@ -171,10 +171,10 @@ process.exit(0);
   };
 }
 
-describe("scripts/mantis/pr-desktop-lease", () => {
+describe("scripts/crabbox/pr-desktop-lease", () => {
   it("uses the active lease provider for stop even when the requested PR head is stale", () => {
     const activeComment = [
-      "<!-- mantis-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
+      "<!-- crabbox-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
       "- Platform: `linux`",
       "- Provider: `azure`",
       "- Lease: `cbx_active`",
@@ -204,7 +204,7 @@ describe("scripts/mantis/pr-desktop-lease", () => {
       tool: "crabbox",
       args: ["stop", "--provider", "azure", "cbx_active"],
     });
-    expect(commentBody).toContain("Stopped the Mantis Crabbox linux desktop lease");
+    expect(commentBody).toContain("Stopped the Crabbox linux desktop lease");
     expect(commentBody).toContain("- Provider: `azure`");
   });
 
@@ -257,7 +257,7 @@ describe("scripts/mantis/pr-desktop-lease", () => {
         "on-demand",
       ],
     });
-    expect(commentBody).toContain("Mantis Crabbox desktop lease ready for PR testing.");
+    expect(commentBody).toContain("Crabbox desktop lease ready for PR testing.");
     expect(commentBody).toContain("- Platform: `mac`");
     expect(commentBody).toContain("- Provider: `aws`");
     expect(commentBody).toContain("Portal: https://crabbox.example.test/portal/leases/cbx_test123");
@@ -267,7 +267,7 @@ describe("scripts/mantis/pr-desktop-lease", () => {
 
   it("finds trusted lease comments from paginated gh slurp output", () => {
     const activeComment = [
-      "<!-- mantis-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
+      "<!-- crabbox-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
       "- Platform: `linux`",
       "- Provider: `azure`",
       "- Lease: `cbx_active`",
@@ -296,7 +296,7 @@ describe("scripts/mantis/pr-desktop-lease", () => {
 
   it("does not reuse terminal Crabbox lease states", () => {
     const releasedComment = [
-      "<!-- mantis-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
+      "<!-- crabbox-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
       "- Platform: `linux`",
       "- Provider: `azure`",
       "- Lease: `cbx_released`",
@@ -344,7 +344,7 @@ describe("scripts/mantis/pr-desktop-lease", () => {
 
   it("replaces leases when non-zero inspect output reports not found", () => {
     const deletedComment = [
-      "<!-- mantis-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
+      "<!-- crabbox-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
       "- Platform: `linux`",
       "- Provider: `azure`",
       "- Lease: `cbx_deleted`",
@@ -378,7 +378,7 @@ describe("scripts/mantis/pr-desktop-lease", () => {
 
   it("does not create a replacement lease when existing lease inspection fails", () => {
     const activeComment = [
-      "<!-- mantis-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
+      "<!-- crabbox-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
       "- Platform: `linux`",
       "- Provider: `azure`",
       "- Lease: `cbx_active`",
@@ -409,7 +409,7 @@ describe("scripts/mantis/pr-desktop-lease", () => {
 
   it("replaces active leases from an older PR head", () => {
     const staleComment = [
-      "<!-- mantis-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
+      "<!-- crabbox-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
       "- Platform: `linux`",
       "- Provider: `azure`",
       "- Lease: `cbx_stale`",
@@ -449,7 +449,7 @@ describe("scripts/mantis/pr-desktop-lease", () => {
 
   it("restarts WebVNC before reusing an active same-head lease", () => {
     const activeComment = [
-      "<!-- mantis-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
+      "<!-- crabbox-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
       "- Platform: `linux`",
       "- Provider: `azure`",
       "- Lease: `cbx_active`",
@@ -499,7 +499,7 @@ describe("scripts/mantis/pr-desktop-lease", () => {
 
   it("comments instead of throwing when same-head WebVNC restart fails", () => {
     const activeComment = [
-      "<!-- mantis-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
+      "<!-- crabbox-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
       "- Platform: `linux`",
       "- Provider: `azure`",
       "- Lease: `cbx_active`",
@@ -543,7 +543,7 @@ describe("scripts/mantis/pr-desktop-lease", () => {
 
   it("marks the stale lease stopped before risky replacement warmup", () => {
     const staleComment = [
-      "<!-- mantis-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
+      "<!-- crabbox-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
       "- Platform: `linux`",
       "- Provider: `azure`",
       "- Lease: `cbx_stale`",
@@ -586,7 +586,7 @@ describe("scripts/mantis/pr-desktop-lease", () => {
 
   it("does not create a replacement lease when stopping the stale lease fails", () => {
     const staleComment = [
-      "<!-- mantis-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
+      "<!-- crabbox-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
       "- Platform: `linux`",
       "- Provider: `azure`",
       "- Lease: `cbx_stale`",
@@ -669,7 +669,7 @@ describe("scripts/mantis/pr-desktop-lease", () => {
 
   it("does not overwrite active lease comments for validation-only failures", () => {
     const activeComment = [
-      "<!-- mantis-pr-desktop-lease:openclaw/openclaw:85136:mac -->",
+      "<!-- crabbox-pr-desktop-lease:openclaw/openclaw:85136:mac -->",
       "- Platform: `mac`",
       "- Provider: `aws`",
       "- Lease: `cbx_active`",
@@ -712,7 +712,7 @@ describe("scripts/mantis/pr-desktop-lease", () => {
 
   it("allows cleanup actions after the PR is closed", () => {
     const activeComment = [
-      "<!-- mantis-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
+      "<!-- crabbox-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
       "- Platform: `linux`",
       "- Provider: `azure`",
       "- Lease: `cbx_active`",
@@ -739,12 +739,12 @@ describe("scripts/mantis/pr-desktop-lease", () => {
       tool: "crabbox",
       args: ["stop", "--provider", "azure", "cbx_active"],
     });
-    expect(commentBody).toContain("Stopped the Mantis Crabbox linux desktop lease");
+    expect(commentBody).toContain("Stopped the Crabbox linux desktop lease");
   });
 
   it("preserves reusable lease metadata when resetting WebVNC", () => {
     const activeComment = [
-      "<!-- mantis-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
+      "<!-- crabbox-pr-desktop-lease:openclaw/openclaw:85136:linux -->",
       "- Platform: `linux`",
       "- Provider: `azure`",
       "- Lease: `cbx_active`",

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
-const WORKFLOW = ".github/workflows/mantis-pr-desktop-lease.yml";
+const WORKFLOW = ".github/workflows/crabbox-pr-desktop-lease.yml";
 
 type WorkflowStep = {
   env?: Record<string, string>;
@@ -37,7 +37,7 @@ function readWorkflow(): Workflow {
   return parse(readFileSync(WORKFLOW, "utf8")) as Workflow;
 }
 
-describe("Mantis PR desktop lease workflow", () => {
+describe("Crabbox PR desktop lease workflow", () => {
   it("exposes only supported desktop lease inputs", () => {
     const inputs = readWorkflow().on?.workflow_dispatch?.inputs ?? {};
 
@@ -63,7 +63,7 @@ describe("Mantis PR desktop lease workflow", () => {
   it("uses narrow permissions and current artifact upload action", () => {
     const workflow = readWorkflow();
     const upload = workflow.jobs?.["pr-desktop-lease"]?.steps?.find(
-      (step) => step.name === "Upload Mantis PR desktop lease summary",
+      (step) => step.name === "Upload Crabbox PR desktop lease summary",
     );
 
     expect(workflow.permissions).toEqual({

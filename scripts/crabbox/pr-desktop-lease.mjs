@@ -6,12 +6,12 @@ import path from "node:path";
 const DEFAULT_TTL_MINUTES = { linux: 90, mac: 60 };
 const MAX_TTL_MINUTES = { linux: 100, mac: 100 };
 const IDLE_TIMEOUT_MINUTES = 30;
-const KEEPALIVE_POLL_MS = Number(process.env.MANTIS_PR_DESKTOP_LEASE_KEEPALIVE_POLL_MS || "60000");
+const KEEPALIVE_POLL_MS = Number(process.env.CRABBOX_PR_DESKTOP_LEASE_KEEPALIVE_POLL_MS || "60000");
 const WEBVNC_READY_TIMEOUT_MS = Number(
-  process.env.MANTIS_PR_DESKTOP_LEASE_WEBVNC_READY_TIMEOUT_MS || "60000",
+  process.env.CRABBOX_PR_DESKTOP_LEASE_WEBVNC_READY_TIMEOUT_MS || "60000",
 );
 const WEBVNC_READY_POLL_MS = Number(
-  process.env.MANTIS_PR_DESKTOP_LEASE_WEBVNC_READY_POLL_MS || "5000",
+  process.env.CRABBOX_PR_DESKTOP_LEASE_WEBVNC_READY_POLL_MS || "5000",
 );
 const TERMINAL_LEASE_STATES = new Set([
   "deleted",
@@ -35,7 +35,7 @@ const provider = normalizeProvider(
 );
 const requestedHeadSha = String(payload.head_sha || "");
 const ttlMinutes = normalizeTtlMinutes(payload.ttl_minutes, platform);
-const outputDir = path.join(".artifacts", "qa-e2e", "mantis", "pr-desktop-lease");
+const outputDir = path.join(".artifacts", "crabbox", "pr-desktop-lease");
 const runUrl =
   process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID
     ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
@@ -50,7 +50,7 @@ async function main() {
     postComment({
       status: "failed",
       failed_step: "target validation",
-      failure_excerpt: `Mantis PR desktop leases only support ${process.env.GITHUB_REPOSITORY}; received ${repo}.`,
+      failure_excerpt: `Crabbox PR desktop leases only support ${process.env.GITHUB_REPOSITORY}; received ${repo}.`,
     });
     return;
   }
@@ -92,7 +92,7 @@ async function main() {
     postComment({
       status: "failed",
       failed_step: "state lookup",
-      failure_excerpt: `No active Mantis ${platform} desktop lease was found for ${repo}#${prNumber}.`,
+      failure_excerpt: `No active Crabbox ${platform} desktop lease was found for ${repo}#${prNumber}.`,
     });
     return;
   }
@@ -489,7 +489,7 @@ function renderComment(state) {
       marker(state),
       "🦞✅",
       "",
-      "Mantis Crabbox desktop lease ready for PR testing.",
+      "Crabbox desktop lease ready for PR testing.",
       "",
       summaryLines(state).join("\n"),
       "",
@@ -504,7 +504,7 @@ function renderComment(state) {
       marker(state),
       "🦞👀",
       "",
-      `A Mantis Crabbox ${state.platform || "linux"} desktop lease is already active for this PR.`,
+      `A Crabbox ${state.platform || "linux"} desktop lease is already active for this PR.`,
       "",
       summaryLines(state).join("\n"),
       "",
@@ -519,7 +519,7 @@ function renderComment(state) {
       marker(state),
       "🦞✅",
       "",
-      `Stopped the Mantis Crabbox ${state.platform || "linux"} desktop lease for this PR.`,
+      `Stopped the Crabbox ${state.platform || "linux"} desktop lease for this PR.`,
       "",
       `- Lease: \`${state.lease_id || "unknown"}\``,
       `- Platform: \`${state.platform || "linux"}\``,
@@ -534,7 +534,7 @@ function renderComment(state) {
       marker(state),
       "🦞✅",
       "",
-      `Reset WebVNC for the Mantis Crabbox ${state.platform || "linux"} desktop lease.`,
+      `Reset WebVNC for the Crabbox ${state.platform || "linux"} desktop lease.`,
       "",
       summaryLines(state).join("\n"),
       "",
@@ -544,10 +544,10 @@ function renderComment(state) {
   }
   const failureIntro =
     state.failed_step === "replace-stale-lease-stop"
-      ? `A stale Mantis Crabbox ${state.platform || "linux"} desktop lease is still active and could not be stopped before replacement.`
+      ? `A stale Crabbox ${state.platform || "linux"} desktop lease is still active and could not be stopped before replacement.`
       : state.lease_id
-        ? `Mantis Crabbox ${state.platform || "linux"} desktop lease is alive, but setup did not finish.`
-        : `Mantis Crabbox ${state.platform || "linux"} desktop lease could not be created.`;
+        ? `Crabbox ${state.platform || "linux"} desktop lease is alive, but setup did not finish.`
+        : `Crabbox ${state.platform || "linux"} desktop lease could not be created.`;
   return [
     marker(state),
     "🦞⚠️",
@@ -616,7 +616,7 @@ function findLatestLease() {
       sanitizeWebvncURL(body.match(/WebVNC: (https:\/\/\S+)/)?.[1] || ""),
     expires_at: body.match(/- Expires: `([^`]+)`/)?.[1] || "",
     head_sha: body.match(/- PR code: `[^`]+` at `([0-9a-fA-F]{7,40})`/)?.[1] || "",
-    status: body.includes("Stopped the Mantis Crabbox") ? "stopped" : "ready",
+    status: body.includes("Stopped the Crabbox") ? "stopped" : "ready",
   };
 }
 
@@ -792,7 +792,7 @@ function writeSummary(state) {
 }
 
 function marker(state) {
-  return `<!-- mantis-pr-desktop-lease:${state.repo || repo}:${state.pr_number || prNumber}:${state.platform || platform} -->`;
+  return `<!-- crabbox-pr-desktop-lease:${state.repo || repo}:${state.pr_number || prNumber}:${state.platform || platform} -->`;
 }
 
 function leaseSlug() {

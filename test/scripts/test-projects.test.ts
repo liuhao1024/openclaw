@@ -651,12 +651,12 @@ describe("scripts/test-projects changed-target routing", () => {
     });
   });
 
-  it("routes Mantis PR desktop lease workflow edits to the workflow regression test", () => {
+  it("routes Crabbox PR desktop lease workflow edits to the workflow regression test", () => {
     expect(
-      resolveChangedTestTargetPlan([".github/workflows/mantis-pr-desktop-lease.yml"]),
+      resolveChangedTestTargetPlan([".github/workflows/crabbox-pr-desktop-lease.yml"]),
     ).toEqual({
       mode: "targets",
-      targets: ["test/scripts/mantis-pr-desktop-lease-workflow.test.ts"],
+      targets: ["test/scripts/crabbox-pr-desktop-lease-workflow.test.ts"],
     });
   });
 

@@ -239,22 +239,9 @@ operators can switch to Hetzner when AWS capacity is slow or unavailable. Use
 this lane when you want "a Linux desktop with Slack and a claw running" instead
 of only a bot-to-bot Slack transcript.
 
-`Mantis PR Desktop Lease` is the maintainer handoff workflow for ad hoc PR
-desktop inspection. It can create, report, stop, or reset a shared Crabbox
-desktop lease for an open PR, then upsert a status comment with the authenticated
-portal URL and useful follow-up commands. Linux leases can use AWS, Azure, or
-Hetzner. macOS leases use AWS EC2 Mac capacity with On-Demand market because EC2
-Mac runs on Dedicated Host backed capacity. Lease TTL is capped below the
-workflow timeout so the GitHub-hosted WebVNC bridge can stay alive until the
-lease expires. The workflow checks the requested PR head before creating a lease
-and verifies the fresh remote checkout resolved to that exact commit before
-posting the lease as ready.
-
-GitHub only exposes manual dispatch for workflows that already exist on the
-default branch. First-run proof for changes to this workflow needs either a
-trusted default-branch workflow deployment or an operator machine with Crabbox
-coordinator, provider, and mac host configuration. Do not run a branch checkout
-of the lease script with shared Crabbox secrets.
+Generic maintainer PR desktop leases are outside Mantis. See
+[Crabbox PR desktop leases](/concepts/crabbox-pr-desktop-leases) for the
+shared Linux and macOS inspection handoff workflow.
 
 `Mantis Telegram Live` wraps the existing Telegram live QA lane in the same PR
 evidence pipeline. It checks out the trusted candidate ref in a separate
@@ -628,7 +615,7 @@ Recommended secret names:
 
 Long term, the Convex credential pool should remain the normal source for live
 transport credentials. GitHub secrets bootstrap the broker and fallback lanes.
-The Discord status-reactions workflow maps the Mantis Crabbox secrets back to
+The Discord status-reactions workflow maps the Crabbox secrets back to
 the `CRABBOX_COORDINATOR` and `CRABBOX_COORDINATOR_TOKEN` environment variables
 that the Crabbox CLI expects. The plain `CRABBOX_*` GitHub secret names remain
 accepted as a compatibility fallback.

@@ -1,4 +1,4 @@
-name: Mantis PR Desktop Lease
+name: Crabbox PR Desktop Lease
 
 on:
   repository_dispatch:
@@ -130,7 +130,7 @@ jobs:
             fi
             key_tail="${head_sha:-$RUN_ID}"
           fi
-          echo "group=mantis-pr-desktop-lease-${target_repo}-${pr_number}-${platform}-${key_tail}" >> "$GITHUB_OUTPUT"
+          echo "group=crabbox-pr-desktop-lease-${target_repo}-${pr_number}-${platform}-${key_tail}" >> "$GITHUB_OUTPUT"
 
   pr-desktop-lease:
     needs: [authorize_actor, resolve_lease_key]
@@ -171,11 +171,11 @@ jobs:
           "$HOME/.local/bin/crabbox" warmup --help > "$install_dir/warmup-help.txt" 2>&1
           grep -q -- "-desktop" "$install_dir/warmup-help.txt"
 
-      - name: Run Mantis PR desktop lease command
+      - name: Run Crabbox PR desktop lease command
         env:
           GH_TOKEN: ${{ github.token }}
-          CRABBOX_COORDINATOR: ${{ secrets.CRABBOX_COORDINATOR || secrets.OPENCLAW_QA_MANTIS_CRABBOX_COORDINATOR }}
-          CRABBOX_COORDINATOR_TOKEN: ${{ secrets.CRABBOX_COORDINATOR_TOKEN || secrets.OPENCLAW_QA_MANTIS_CRABBOX_COORDINATOR_TOKEN }}
+          CRABBOX_COORDINATOR: ${{ secrets.CRABBOX_COORDINATOR || secrets.OPENCLAW_QA_CRABBOX_COORDINATOR || secrets.OPENCLAW_QA_MANTIS_CRABBOX_COORDINATOR }}
+          CRABBOX_COORDINATOR_TOKEN: ${{ secrets.CRABBOX_COORDINATOR_TOKEN || secrets.OPENCLAW_QA_CRABBOX_COORDINATOR_TOKEN || secrets.OPENCLAW_QA_MANTIS_CRABBOX_COORDINATOR_TOKEN }}
           CRABBOX_ACCESS_CLIENT_ID: ${{ secrets.CRABBOX_ACCESS_CLIENT_ID }}
           CRABBOX_ACCESS_CLIENT_SECRET: ${{ secrets.CRABBOX_ACCESS_CLIENT_SECRET }}
           INPUT_TARGET_REPO: ${{ inputs.target_repo }}
@@ -189,11 +189,11 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${CRABBOX_COORDINATOR:-}" ]; then
-            echo "Missing CRABBOX_COORDINATOR or OPENCLAW_QA_MANTIS_CRABBOX_COORDINATOR." >&2
+            echo "Missing CRABBOX_COORDINATOR or OPENCLAW_QA_CRABBOX_COORDINATOR." >&2
             exit 1
           fi
           if [ -z "${CRABBOX_COORDINATOR_TOKEN:-}" ]; then
-            echo "Missing CRABBOX_COORDINATOR_TOKEN or OPENCLAW_QA_MANTIS_CRABBOX_COORDINATOR_TOKEN." >&2
+            echo "Missing CRABBOX_COORDINATOR_TOKEN or OPENCLAW_QA_CRABBOX_COORDINATOR_TOKEN." >&2
             exit 1
           fi
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -209,12 +209,12 @@ jobs:
               '{client_payload:{target_repo:$target_repo,item_number:$item_number,action:$action,platform:$platform,ttl_minutes:$ttl_minutes,head_sha:$head_sha,provider:$provider}}' > "$event_path"
             export GITHUB_EVENT_PATH="$event_path"
           fi
-          node scripts/mantis/pr-desktop-lease.mjs
+          node scripts/crabbox/pr-desktop-lease.mjs
 
-      - name: Upload Mantis PR desktop lease summary
+      - name: Upload Crabbox PR desktop lease summary
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: mantis-pr-desktop-lease-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .artifacts/qa-e2e/mantis/pr-desktop-lease
+          name: crabbox-pr-desktop-lease-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/crabbox/pr-desktop-lease
           if-no-files-found: ignore
