@@ -99,6 +99,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       group: ${{ steps.key.outputs.group }}
+      head_sha: ${{ steps.key.outputs.head_sha }}
     steps:
       - name: Build lease concurrency key
         id: key
@@ -131,6 +132,7 @@ jobs:
             key_tail="${head_sha:-$RUN_ID}"
           fi
           echo "group=crabbox-pr-desktop-lease-${target_repo}-${pr_number}-${platform}-${key_tail}" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
 
   pr-desktop-lease:
     needs: [authorize_actor, resolve_lease_key]
@@ -183,8 +185,9 @@ jobs:
           INPUT_ACTION: ${{ inputs.action }}
           INPUT_PLATFORM: ${{ inputs.platform }}
           INPUT_TTL_MINUTES: ${{ inputs.ttl_minutes }}
-          INPUT_HEAD_SHA: ${{ inputs.head_sha }}
+          INPUT_HEAD_SHA: ${{ inputs.head_sha || needs.resolve_lease_key.outputs.head_sha }}
           INPUT_PROVIDER: ${{ inputs.provider }}
+          CRABBOX_PR_DESKTOP_LEASE_HEAD_SHA: ${{ needs.resolve_lease_key.outputs.head_sha }}
         shell: bash
         run: |
           set -euo pipefail

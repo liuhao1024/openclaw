@@ -33,7 +33,9 @@ const provider = normalizeProvider(
   String(payload.provider || process.env.CRABBOX_PROVIDER || "aws"),
   platform,
 );
-const requestedHeadSha = String(payload.head_sha || "");
+const requestedHeadSha = String(
+  payload.head_sha || process.env.CRABBOX_PR_DESKTOP_LEASE_HEAD_SHA || "",
+);
 const ttlMinutes = normalizeTtlMinutes(payload.ttl_minutes, platform);
 const outputDir = path.join(".artifacts", "crabbox", "pr-desktop-lease");
 const runUrl =
@@ -300,6 +302,7 @@ async function lease(headSha) {
 
   let leaseID = "";
   try {
+    const acquiredAtMs = Date.now();
     const warmup = runCrabbox(warmupArgs());
     leaseID = extractLeaseID(warmup.stdout);
     if (!leaseID)
@@ -315,7 +318,7 @@ async function lease(headSha) {
       head_sha: headSha,
       ttl_minutes: ttlMinutes,
       idle_timeout_minutes: IDLE_TIMEOUT_MINUTES,
-      created_at: new Date().toISOString(),
+      created_at: new Date(acquiredAtMs).toISOString(),
       sharing: "org use",
     };
     writeSummary(baseState);
@@ -351,7 +354,7 @@ async function lease(headSha) {
       ...baseState,
       status: "ready",
       portal_url: portalURL(leaseID),
-      expires_at: new Date(Date.now() + ttlMinutes * 60_000).toISOString(),
+      expires_at: new Date(acquiredAtMs + ttlMinutes * 60_000).toISOString(),
     };
     writeSummary(ready);
     postComment(ready);

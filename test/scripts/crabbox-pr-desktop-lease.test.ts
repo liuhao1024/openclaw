@@ -233,6 +233,25 @@ describe("scripts/crabbox/pr-desktop-lease", () => {
     expect(commentBody).toContain(`PR head changed from ${staleHead} to ${currentHead}`);
   });
 
+  it("uses the workflow-resolved PR head when the payload omits head_sha", () => {
+    const { calls, commentBody, result } = runLeaseScript(
+      {
+        action: "lease",
+        item_number: "85136",
+        platform: "mac",
+        provider: "aws",
+        target_repo: "openclaw/openclaw",
+        ttl_minutes: "60",
+      },
+      [],
+      { CRABBOX_PR_DESKTOP_LEASE_HEAD_SHA: staleHead },
+    );
+
+    expect(result.status).toBe(0);
+    expect(calls.filter((call) => call.tool === "crabbox")).toEqual([]);
+    expect(commentBody).toContain(`PR head changed from ${staleHead} to ${currentHead}`);
+  });
+
   it("creates mac leases with AWS on-demand desktop semantics", () => {
     const { calls, commentBody, result } = runLeaseScript({
       action: "lease",

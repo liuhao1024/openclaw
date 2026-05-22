@@ -82,10 +82,20 @@ describe("Crabbox PR desktop lease workflow", () => {
     expect(leaseJob?.needs).toEqual(["authorize_actor", "resolve_lease_key"]);
     expect(leaseJob?.concurrency?.group).toBe("${{ needs.resolve_lease_key.outputs.group }}");
     expect(leaseJob?.concurrency?.["cancel-in-progress"]).toBe(false);
+    expect(workflow.jobs?.resolve_lease_key?.outputs?.head_sha).toBe(
+      "${{ steps.key.outputs.head_sha }}",
+    );
     expect(text).toContain('head_sha="$(gh pr view "$pr_number"');
     expect(text).toContain('CLIENT_HEAD_SHA: ${{ github.event.client_payload.head_sha }}');
     expect(text).toContain('head_sha="${INPUT_HEAD_SHA:-${CLIENT_HEAD_SHA:-}}"');
     expect(text).toContain('key_tail="${head_sha:-$RUN_ID}"');
+    expect(text).toContain('echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"');
+    expect(text).toContain(
+      "INPUT_HEAD_SHA: ${{ inputs.head_sha || needs.resolve_lease_key.outputs.head_sha }}",
+    );
+    expect(text).toContain(
+      "CRABBOX_PR_DESKTOP_LEASE_HEAD_SHA: ${{ needs.resolve_lease_key.outputs.head_sha }}",
+    );
     expect(text).not.toContain('target_repo="${INPUT_TARGET_REPO:-${{ github.event.client_payload');
   });
 });
