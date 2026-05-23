@@ -17,6 +17,7 @@ import {
 } from "../infra/exec-approvals.js";
 import { defaultExecAutoReviewer, type ExecAutoReviewer } from "../infra/exec-auto-review.js";
 import type { SafeBinProfile } from "../infra/exec-safe-bin-policy.js";
+import { revalidateApprovedMutableFileOperand } from "../node-host/invoke-system-run-plan.js";
 import { markBackgrounded, tail } from "./bash-process-registry.js";
 import {
   buildExecApprovalRequesterContext,
@@ -36,7 +37,7 @@ import {
   sendExecApprovalFollowupResult,
   shouldResolveExecApprovalUnavailableInline,
 } from "./bash-tools.exec-host-shared.js";
-import { commandRequiresMutableScriptApproval } from "./bash-tools.exec-mutable-script-guard.js";
+import { resolveMutableScriptApprovalBindings } from "./bash-tools.exec-mutable-script-guard.js";
 import {
   DEFAULT_NOTIFY_TAIL_CHARS,
   createApprovalSlug,
@@ -380,12 +381,28 @@ export async function processGatewayAllowlist(
       env: params.env,
       segments: allowlistEval.segments,
     }) && !(hostSecurity === "full" && hostAsk === "off");
+  const mutableScriptApprovalBindings = resolveMutableScriptApprovalBindings({
+    cwd: params.workdir,
+    segments: allowlistEval.segments,
+  });
   const requiresMutableScriptApproval =
-    commandRequiresMutableScriptApproval({
-      command: params.command,
-      cwd: params.workdir,
-      segments: allowlistEval.segments,
-    }) && !(hostSecurity === "full" && hostAsk === "off");
+    (!mutableScriptApprovalBindings.ok || mutableScriptApprovalBindings.bindings.length > 0) &&
+    !(hostSecurity === "full" && hostAsk === "off");
+  if (requiresMutableScriptApproval && !mutableScriptApprovalBindings.ok) {
+    return {
+      pendingResult: failedTextResult(mutableScriptApprovalBindings.message, {
+        status: "failed",
+        exitCode: null,
+        durationMs: 0,
+        aggregated: "",
+        cwd: params.workdir,
+      }),
+    };
+  }
+  const mutableScriptBindings =
+    requiresMutableScriptApproval && mutableScriptApprovalBindings.ok
+      ? mutableScriptApprovalBindings.bindings
+      : [];
   const requiresAsk =
     requiresExecApproval({
       ask: hostAsk,
@@ -559,6 +576,19 @@ export async function processGatewayAllowlist(
         );
       }
 
+      if (
+        mutableScriptBindings.some(
+          (binding) =>
+            !revalidateApprovedMutableFileOperand({
+              snapshot: binding.snapshot,
+              argv: binding.argv,
+              cwd: params.workdir,
+            }),
+        )
+      ) {
+        throw new Error("exec denied: approval script operand changed before execution");
+      }
+
       recordMatchedAllowlistUse(
         resolveApprovalAuditTrustPath(
           allowlistEval.segments[0]?.resolution ?? null,
@@ -697,6 +727,23 @@ export async function processGatewayAllowlist(
         await sendExecApprovalFollowupResult(
           followupTarget,
           `Exec denied (gateway id=${approvalId}, ${approvalDecision.deniedReason}): ${params.command}`,
+        );
+        return;
+      }
+
+      if (
+        mutableScriptBindings.some(
+          (binding) =>
+            !revalidateApprovedMutableFileOperand({
+              snapshot: binding.snapshot,
+              argv: binding.argv,
+              cwd: params.workdir,
+            }),
+        )
+      ) {
+        await sendExecApprovalFollowupResult(
+          followupTarget,
+          `Exec denied (gateway id=${approvalId}, approval script operand changed before execution): ${params.command}`,
         );
         return;
       }

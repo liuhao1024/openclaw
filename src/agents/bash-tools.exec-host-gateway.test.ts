@@ -754,7 +754,61 @@ EOF`,
     }
   });
 
-  it("keeps shell-wrapped mutable script operands on explicit approval in auto-review mode", async () => {
+  it("denies approved gateway mutable script execution when the script changes before run", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-gateway-script-drift-"));
+    try {
+      const scriptPath = path.join(tmp, "script.js");
+      const command = `node ${scriptPath}`;
+      fs.writeFileSync(scriptPath, 'console.log("reviewed");\n');
+      resolveExecHostApprovalContextMock.mockReturnValue({
+        approvals: { allowlist: [], file: { version: 1, agents: {} } },
+        hostSecurity: "allowlist",
+        hostAsk: "on-miss",
+        askFallback: "deny",
+      });
+      evaluateShellAllowlistMock.mockReturnValue({
+        allowlistMatches: [],
+        analysisOk: true,
+        allowlistSatisfied: true,
+        segments: [{ resolution: null, argv: ["node", scriptPath] }],
+        segmentAllowlistEntries: [{ pattern: "node *", source: "allow-always" }],
+      });
+      buildEnforcedShellCommandMock.mockReturnValue({
+        ok: true,
+        command,
+      });
+      hasDurableExecApprovalMock.mockReturnValue(true);
+      requiresExecApprovalMock.mockReturnValue(false);
+      resolveApprovalDecisionOrUndefinedMock.mockImplementation(async () => {
+        fs.writeFileSync(scriptPath, 'console.log("changed");\n');
+        return "allow-once";
+      });
+      createExecApprovalDecisionStateMock.mockReturnValue({
+        baseDecision: { timedOut: false },
+        approvedByAsk: false,
+        deniedReason: null,
+      });
+
+      const result = await runGatewayAllowlist({
+        command,
+        workdir: tmp,
+        ask: "on-miss",
+      });
+
+      expect(result.pendingResult?.details.status).toBe("approval-pending");
+      await vi.waitFor(() => {
+        expect(sendExecApprovalFollowupResultMock).toHaveBeenCalledWith(
+          null,
+          `Exec denied (gateway id=req-1, approval script operand changed before execution): ${command}`,
+        );
+      });
+      expect(runExecProcessMock).not.toHaveBeenCalled();
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("denies unbindable shell-wrapped mutable script operands in auto-review mode", async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-gateway-auto-unbindable-"));
     try {
       const scriptPath = path.join(tmp, "script.js");
@@ -777,8 +831,11 @@ EOF`,
       });
 
       expect(defaultExecAutoReviewerMock).not.toHaveBeenCalled();
-      expect(createAndRegisterDefaultExecApprovalRequestMock).toHaveBeenCalledTimes(1);
-      expect(result.pendingResult?.details.status).toBe("approval-pending");
+      expect(createAndRegisterDefaultExecApprovalRequestMock).not.toHaveBeenCalled();
+      expect(result.pendingResult?.details.status).toBe("failed");
+      expect(JSON.stringify(result.pendingResult)).toContain(
+        "SYSTEM_RUN_DENIED: approval cannot safely bind this interpreter/runtime command",
+      );
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

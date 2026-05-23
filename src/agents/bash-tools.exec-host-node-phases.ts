@@ -330,7 +330,6 @@ export async function analyzeNodeApprovalRequirement(params: {
   const requiresMutableScriptApproval =
     (params.prepared.plan.mutableFileOperand != null ||
       commandRequiresMutableScriptApproval({
-        command: params.request.command,
         cwd: params.prepared.cwd ?? params.request.workdir,
         segments: baseAllowlistEval.segments,
       })) &&
