@@ -369,6 +369,33 @@ describe("collectPromptCacheConfigWarnings", () => {
     ]);
   });
 
+  it("does not inherit default fallbacks when an agent owns its primary model", () => {
+    const cfg: OpenClawConfig = {
+      agents: {
+        defaults: {
+          model: {
+            primary: "anthropic/claude-opus-4-6",
+            fallbacks: ["anthropic/claude-sonnet-4-6"],
+          },
+          contextPruning: { mode: "cache-ttl", ttl: "5m" },
+          heartbeat: { every: "4m" },
+          models: {
+            "anthropic/claude-opus-4-6": { params: { cacheRetention: "long" } },
+          },
+        },
+        list: [
+          {
+            id: "strict-agent",
+            model: { primary: "anthropic/claude-opus-4-6" },
+            heartbeat: { every: "55m" },
+          },
+        ],
+      },
+    };
+
+    expect(collectPromptCacheConfigWarnings(cfg)).toEqual([]);
+  });
+
   it("warns when Google cache-ttl models omit explicit cache retention", () => {
     const cfg: OpenClawConfig = {
       agents: {

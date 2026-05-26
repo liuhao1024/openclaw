@@ -25,7 +25,6 @@ import { parseDurationMs } from "../../../cli/parse-duration.js";
 import { extractProviderFromModelRef } from "../../../config/model-refs.js";
 import type { AgentConfig } from "../../../config/types.agents.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import { resolveLoadedProviderRuntimePlugin } from "../../../plugins/provider-hook-runtime.js";
 import { normalizeLowercaseStringOrEmpty } from "../../../shared/string-coerce.js";
 
 type CacheRetention = "none" | "short" | "long";
@@ -441,25 +440,14 @@ function isStaticCacheTtlEligibleProvider(
 }
 
 function isDoctorCacheTtlEligibleProvider(
-  cfg: OpenClawConfig,
+  _cfg: OpenClawConfig,
   provider: string,
   modelId: string,
   modelApi?: string,
 ): boolean {
   const normalizedProvider = normalizeLowercaseStringOrEmpty(provider);
   const normalizedModelId = normalizeLowercaseStringOrEmpty(modelId);
-  const pluginEligibility = resolveLoadedProviderRuntimePlugin({
-    provider: normalizedProvider,
-    config: cfg,
-  })?.isCacheTtlEligible?.({
-    provider: normalizedProvider,
-    modelId: normalizedModelId,
-    modelApi,
-  });
-  return (
-    pluginEligibility ??
-    isStaticCacheTtlEligibleProvider(normalizedProvider, normalizedModelId, modelApi)
-  );
+  return isStaticCacheTtlEligibleProvider(normalizedProvider, normalizedModelId, modelApi);
 }
 
 function requiresExplicitCacheRetention(provider: string, modelId: string, modelApi?: string): boolean {
