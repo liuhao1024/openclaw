@@ -16,6 +16,7 @@ import {
   emitAgentEvent as emitGlobalAgentEvent,
   finalizeHarnessContextEngineTurn,
   formatErrorMessage,
+  getAgentHarnessHookRunner,
   getBeforeToolCallPolicyDiagnosticState,
   isActiveHarnessContextEngine,
   isSubagentSessionKey,
@@ -1174,6 +1175,7 @@ export async function runCodexAppServerAttempt(
     channelId: hookChannelId,
     ...hookContextWindowFields,
   };
+  const hookRunner = getAgentHarnessHookRunner();
   const activeContextEnginePluginId = activeContextEngine
     ? resolveContextEngineOwnerPluginId(activeContextEngine)
     : undefined;
@@ -2722,9 +2724,8 @@ export async function runCodexAppServerAttempt(
   const codexDiagnosticToolDefinitions = codexModelContentCapture.toolDefinitions
     ? buildCodexDiagnosticToolDefinitions(tools)
     : undefined;
-  const codexModelContentPrivateData = (
-    modelContent: DiagnosticModelCallContent | undefined,
-  ) => (modelContent && Object.keys(modelContent).length > 0 ? { modelContent } : undefined);
+  const codexModelContentPrivateData = (modelContent: DiagnosticModelCallContent | undefined) =>
+    modelContent && Object.keys(modelContent).length > 0 ? { modelContent } : undefined;
   const buildCodexModelCallDiagnosticContent = (): DiagnosticModelCallContent | undefined => {
     const modelContent = {
       ...(codexModelContentCapture.inputMessages
@@ -2768,9 +2769,7 @@ export async function runCodexAppServerAttempt(
         ...buildCodexModelCallDiagnosticContent(),
         ...(codexModelContentCapture.outputMessages
           ? {
-              outputMessages: result.lastAssistant
-                ? [result.lastAssistant]
-                : result.assistantTexts,
+              outputMessages: result.lastAssistant ? [result.lastAssistant] : result.assistantTexts,
             }
           : {}),
       }),
@@ -2845,6 +2844,7 @@ export async function runCodexAppServerAttempt(
     runAgentHarnessLlmInputHook({
       event: buildLlmInputEvent(),
       ctx: hookContext,
+      hookRunner,
     });
     emitCodexAppServerEvent(params, {
       stream: "codex_app_server.lifecycle",
@@ -2934,6 +2934,7 @@ export async function runCodexAppServerAttempt(
           assistantTexts: [],
         },
         ctx: hookContext,
+        hookRunner,
       });
       const turnStartFailureKind = classifyCodexModelCallFailureKind(turnStartError);
       emitCodexModelCallError(
@@ -2948,6 +2949,7 @@ export async function runCodexAppServerAttempt(
           durationMs: Date.now() - attemptStartedAt,
         },
         ctx: hookContext,
+        hookRunner,
       });
       if (!timedOut) {
         await unsubscribeCodexThreadBestEffort(client, {
@@ -3268,6 +3270,7 @@ export async function runCodexAppServerAttempt(
         ...(result.attemptUsage ? { usage: result.attemptUsage } : {}),
       },
       ctx: hookContext,
+      hookRunner,
     });
     await runCodexAgentEndHook(params, {
       event: {
@@ -3277,6 +3280,7 @@ export async function runCodexAppServerAttempt(
         durationMs: Date.now() - attemptStartedAt,
       },
       ctx: hookContext,
+      hookRunner,
     });
     const completedTurnStatus = activeProjector.getCompletedTurnStatus();
     shouldDelayNativeHookRelayUnregister =
