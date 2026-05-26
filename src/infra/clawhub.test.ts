@@ -425,6 +425,17 @@ describe("clawhub helpers", () => {
     ).rejects.toThrow("ClawHub /api/v1/skills/agentreceipt/card failed (404): card missing");
   });
 
+  it("rejects oversized generated Skill Card markdown", async () => {
+    await expect(
+      fetchClawHubSkillCard({
+        slug: "agentreceipt",
+        fetchImpl: async () => new Response("x".repeat(256 * 1024 + 1)),
+      }),
+    ).rejects.toThrow(
+      "ClawHub skill card for agentreceipt exceeded 262144 bytes (262145 bytes received)",
+    );
+  });
+
   it("wraps non-200 skill verification responses", async () => {
     await expect(
       fetchClawHubSkillVerification({

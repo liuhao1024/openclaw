@@ -15,6 +15,7 @@ export { parseClawHubPluginSpec } from "./clawhub-spec.js";
 
 const DEFAULT_CLAWHUB_URL = "https://clawhub.ai";
 const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
+const SKILL_CARD_MAX_BYTES = 256 * 1024;
 
 export type ClawHubPackageFamily = "skill" | "code-plugin" | "bundle-plugin";
 export type ClawHubPackageChannel = "official" | "community" | "private";
@@ -677,12 +678,17 @@ async function fetchJson<T>(params: ClawHubRequestParams): Promise<T> {
 
 async function readClawHubResponseBytes(params: {
   response: Response;
+  maxBytes?: number;
   timeoutMs?: number;
   resourceLabel: string;
 }): Promise<Uint8Array> {
   const timeoutMs = params.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
-  return await readResponseWithLimit(params.response, Number.MAX_SAFE_INTEGER, {
+  return await readResponseWithLimit(params.response, params.maxBytes ?? Number.MAX_SAFE_INTEGER, {
     chunkTimeoutMs: timeoutMs,
+    onOverflow: ({ size, maxBytes }) =>
+      new Error(
+        `ClawHub ${params.resourceLabel} exceeded ${maxBytes} bytes (${size} bytes received)`,
+      ),
     onIdleTimeout: ({ chunkTimeoutMs }) =>
       new Error(`ClawHub ${params.resourceLabel} body stalled after ${chunkTimeoutMs}ms`),
   });
@@ -976,6 +982,7 @@ export async function fetchClawHubSkillCard(params: {
   }
   const bytes = await readClawHubResponseBytes({
     response,
+    maxBytes: SKILL_CARD_MAX_BYTES,
     timeoutMs: params.timeoutMs,
     resourceLabel: slug ? `skill card for ${slug}` : `skill card at ${url.pathname}`,
   });
