@@ -275,6 +275,42 @@ describe("models-config", () => {
                 apiKey: "OPENAI_API_KEY", // pragma: allowlist secret
                 models: [],
               },
+              litellm: {
+                baseUrl: "https://litellm.example/v1",
+                api: "openai-completions",
+                apiKey: {
+                  source: "env",
+                  provider: "default",
+                  id: "OPENCLAW_MODEL_LITELLM_API_KEY",
+                }, // pragma: allowlist secret
+                models: [
+                  {
+                    id: "litellm-model",
+                    name: "LiteLLM model",
+                    input: ["text"],
+                    reasoning: false,
+                    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                    contextWindow: 128000,
+                    maxTokens: 4096,
+                  },
+                ],
+              },
+            },
+          },
+        },
+        sourceConfigForSecrets: {
+          models: {
+            providers: {
+              litellm: {
+                baseUrl: "https://litellm.example/v1",
+                api: "openai-completions",
+                apiKey: {
+                  source: "env",
+                  provider: "default",
+                  id: "OPENCLAW_MODEL_LITELLM_API_KEY",
+                }, // pragma: allowlist secret
+                models: [],
+              },
             },
           },
         },
@@ -306,6 +342,7 @@ describe("models-config", () => {
     };
     expect(parsed.providers?.custom?.apiKey).toBeUndefined();
     expect(parsed.providers?.existing?.apiKey).toBe("sk-existing-plaintext");
+    expect(parsed.providers?.litellm?.apiKey).toBe("OPENCLAW_MODEL_LITELLM_API_KEY"); // pragma: allowlist secret
     expect(parsed.providers?.openai?.apiKey).toBe("OPENAI_API_KEY"); // pragma: allowlist secret
   });
 

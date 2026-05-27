@@ -112,7 +112,10 @@ function shouldPersistApiKeyMarker(value: unknown): value is string {
 
 function stripPlaintextProviderApiKeys(
   providers: Record<string, ProviderConfig>,
-  opts?: { preservePlaintextApiKeyProviders?: ReadonlySet<string> },
+  opts?: {
+    preservePlaintextApiKeyProviders?: ReadonlySet<string>;
+    secretRefManagedProviders?: ReadonlySet<string>;
+  },
 ): Record<string, ProviderConfig> {
   let mutated = false;
   const sanitized: Record<string, ProviderConfig> = {};
@@ -124,6 +127,10 @@ function stripPlaintextProviderApiKeys(
     }
     const apiKey = (provider as { apiKey?: unknown }).apiKey;
     if (apiKey === undefined || shouldPersistApiKeyMarker(apiKey)) {
+      sanitized[providerKey] = provider;
+      continue;
+    }
+    if (opts?.secretRefManagedProviders?.has(providerKey)) {
       sanitized[providerKey] = provider;
       continue;
     }
@@ -142,9 +149,10 @@ function stripPlaintextProviderApiKeys(
 }
 
 function collectExistingPlaintextApiKeyProviders(existingParsed: unknown): ReadonlySet<string> {
-  const providers = isRecord(existingParsed) && isRecord(existingParsed.providers)
-    ? (existingParsed.providers as Record<string, ExistingProviderConfig>)
-    : undefined;
+  const providers =
+    isRecord(existingParsed) && isRecord(existingParsed.providers)
+      ? (existingParsed.providers as Record<string, ExistingProviderConfig>)
+      : undefined;
   if (!providers) {
     return new Set();
   }
@@ -242,6 +250,7 @@ export async function planOpenClawModelsJsonWithDeps(
   const persistedProviders = stripPlaintextProviderApiKeys(finalProviders, {
     preservePlaintextApiKeyProviders:
       mode === "merge" ? collectExistingPlaintextApiKeyProviders(params.existingParsed) : undefined,
+    secretRefManagedProviders,
   });
   const nextContents = `${JSON.stringify({ providers: persistedProviders }, null, 2)}\n`;
 
