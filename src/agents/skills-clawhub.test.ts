@@ -628,6 +628,65 @@ describe("skills-clawhub", () => {
       }
     });
 
+    it("rejects lock-tracked installed skills without origin metadata", async () => {
+      const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-skill-verify-"));
+      try {
+        await fs.mkdir(path.join(workspaceDir, ".clawhub"), { recursive: true });
+        await fs.writeFile(
+          path.join(workspaceDir, ".clawhub", "lock.json"),
+          `${JSON.stringify(
+            {
+              version: 1,
+              skills: {
+                agentreceipt: {
+                  version: "2.0.0",
+                  installedAt: 123,
+                  registry: "https://private.example.com/clawhub",
+                },
+              },
+            },
+            null,
+            2,
+          )}\n`,
+          "utf8",
+        );
+
+        const result = await resolveClawHubSkillVerificationTarget({
+          workspaceDir,
+          slug: "agentreceipt",
+        });
+
+        expect(result.ok).toBe(false);
+        if (result.ok) {
+          throw new Error("expected missing origin failure");
+        }
+        expect(result.error).toContain("missing ClawHub origin metadata");
+      } finally {
+        await fs.rm(workspaceDir, { recursive: true, force: true });
+      }
+    });
+
+    it("rejects malformed workspace locks before registry fallback", async () => {
+      const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-skill-verify-"));
+      try {
+        await fs.mkdir(path.join(workspaceDir, ".clawhub"), { recursive: true });
+        await fs.writeFile(path.join(workspaceDir, ".clawhub", "lock.json"), "{not json", "utf8");
+
+        const result = await resolveClawHubSkillVerificationTarget({
+          workspaceDir,
+          slug: "agentreceipt",
+        });
+
+        expect(result.ok).toBe(false);
+        if (result.ok) {
+          throw new Error("expected malformed lock failure");
+        }
+        expect(result.error).toContain("Malformed workspace ClawHub lockfile");
+      } finally {
+        await fs.rm(workspaceDir, { recursive: true, force: true });
+      }
+    });
+
     it("uses the configured registry and latest selector for uninstalled skills", async () => {
       const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-skill-verify-"));
       resolveClawHubBaseUrlMock.mockReturnValueOnce("https://configured.example.com/clawhub");

@@ -694,6 +694,20 @@ export async function resolveClawHubSkillVerificationTarget(params: {
       };
     }
 
+    const lockRead = readClawHubSkillsLockfileStatusSync(params.workspaceDir);
+    if (lockRead.kind === "malformed") {
+      return {
+        ok: false,
+        error: `Malformed workspace ClawHub lockfile at ${lockRead.path}: ${lockRead.error}`,
+      };
+    }
+    if (lockRead.kind === "found" && lockRead.lock.skills[trackedSlug]) {
+      return {
+        ok: false,
+        error: `Skill "${trackedSlug}" is tracked by the workspace ClawHub lockfile but is missing ClawHub origin metadata. Reinstall it from ClawHub before verifying it as an installed ClawHub skill.`,
+      };
+    }
+
     const slug = validateRequestedSkillSlug(params.slug);
     const registry = resolveClawHubBaseUrl(params.baseUrl);
     const selector: ClawHubSkillVerificationSelector = version ? "version" : tag ? "tag" : "latest";
