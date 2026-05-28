@@ -1,11 +1,15 @@
 {
-  "fallbackKeys": [],
-  "generatedAt": "2026-05-27T05:22:08.331Z",
+  "fallbackKeys": [
+    "chat.newMessages.label",
+    "chat.newMessages.shortcut",
+    "chat.newMessages.title"
+  ],
+  "generatedAt": "2026-05-28T04:40:08.800Z",
   "locale": "fa",
   "model": "gpt-5.5",
   "provider": "openai",
-  "sourceHash": "24e6aff2cfb534faf3b6a9c96ccafee1470519c2f4498c07841072435a0565ea",
-  "totalKeys": 1155,
+  "sourceHash": "40f1cee965d1d8fa7e3ae1cde4df92be70127f564a4ee25523d785c36bcc1d50",
+  "totalKeys": 1158,
   "translatedKeys": 1155,
   "workflow": 1
 }

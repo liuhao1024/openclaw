@@ -1094,6 +1094,11 @@ export const en: TranslationMap = {
     updateNow: "Update now",
     dismissUpdateBanner: "Dismiss update banner",
     switchedSession: "Switched to {session}",
+    newMessages: {
+      label: "New messages",
+      shortcut: "N",
+      title: "New messages ({shortcut})",
+    },
     welcome: {
       ready: "Ready to chat",
       hintBeforeShortcut: "Type a message below ·",

@@ -1108,6 +1108,11 @@ export const nl: TranslationMap = {
     updateNow: "Nu bijwerken",
     dismissUpdateBanner: "Updatebanner sluiten",
     switchedSession: "Overgeschakeld naar {session}",
+    newMessages: {
+      label: "New messages",
+      shortcut: "N",
+      title: "New messages ({shortcut})",
+    },
     welcome: {
       ready: "Ready to chat",
       hintBeforeShortcut: "Type a message below ·",
