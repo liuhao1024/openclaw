@@ -116,6 +116,7 @@ async function writeMainSessionTranscript(sessionDir: string, lines: string[]) {
 async function fetchHistoryMessages(
   ws: GatewaySocket,
   params?: {
+    beforeSeq?: number;
     limit?: number;
     maxChars?: number;
   },
@@ -123,10 +124,55 @@ async function fetchHistoryMessages(
   const historyRes = await rpcReq<{ messages?: unknown[] }>(ws, "chat.history", {
     sessionKey: "main",
     limit: params?.limit ?? 1000,
+    ...(typeof params?.beforeSeq === "number" ? { beforeSeq: params.beforeSeq } : {}),
     ...(typeof params?.maxChars === "number" ? { maxChars: params.maxChars } : {}),
   });
   expect(historyRes.ok).toBe(true);
   return historyRes.payload?.messages ?? [];
+}
+
+async function fetchHistoryPayload(
+  ws: GatewaySocket,
+  params?: {
+    beforeSeq?: number;
+    limit?: number;
+    maxChars?: number;
+  },
+): Promise<{
+  hasMore?: boolean;
+  messages?: unknown[];
+  newestSeq?: number;
+  nextBeforeSeq?: number | null;
+  oldestSeq?: number;
+}> {
+  const historyRes = await rpcReq<{
+    hasMore?: boolean;
+    messages?: unknown[];
+    newestSeq?: number;
+    nextBeforeSeq?: number | null;
+    oldestSeq?: number;
+  }>(ws, "chat.history", {
+    sessionKey: "main",
+    limit: params?.limit ?? 1000,
+    ...(typeof params?.beforeSeq === "number" ? { beforeSeq: params.beforeSeq } : {}),
+    ...(typeof params?.maxChars === "number" ? { maxChars: params.maxChars } : {}),
+  });
+  expect(historyRes.ok).toBe(true);
+  return historyRes.payload ?? {};
+}
+
+function historySeqs(messages: unknown[] | undefined): number[] {
+  return (messages ?? []).flatMap((message) => {
+    if (!message || typeof message !== "object" || Array.isArray(message)) {
+      return [];
+    }
+    const marker = (message as Record<string, unknown>)["__openclaw"];
+    if (!marker || typeof marker !== "object" || Array.isArray(marker)) {
+      return [];
+    }
+    const seq = (marker as { seq?: unknown }).seq;
+    return typeof seq === "number" ? [seq] : [];
+  });
 }
 
 type ConfiguredImageModelCase = {
@@ -224,6 +270,207 @@ describe("gateway server chat", () => {
       testState.sessionStorePath = undefined;
       await fs.rm(sessionDir, { recursive: true, force: true });
     }
+  });
+
+  test("chat.history paginates displayable messages around hidden transcript entries", async () => {
+    await withGatewayChatHarness(async ({ ws, createSessionDir }) => {
+      const sessionDir = await prepareMainHistoryHarness({ ws, createSessionDir });
+      await writeMainSessionTranscript(sessionDir, [
+        JSON.stringify({
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "older question" }],
+            timestamp: 1,
+          },
+        }),
+        JSON.stringify({
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "older answer" }],
+            timestamp: 2,
+          },
+        }),
+        JSON.stringify({
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "NO_REPLY" }],
+            timestamp: 3,
+          },
+        }),
+        JSON.stringify({
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "NO_REPLY" }],
+            timestamp: 4,
+          },
+        }),
+        JSON.stringify({
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "recent question" }],
+            timestamp: 5,
+          },
+        }),
+        JSON.stringify({
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "recent answer" }],
+            timestamp: 6,
+          },
+        }),
+      ]);
+
+      const recent = await fetchHistoryPayload(ws, { limit: 2 });
+      expect(recent.messages?.map((message) => JSON.stringify(message))).toEqual([
+        expect.stringContaining("recent question"),
+        expect.stringContaining("recent answer"),
+      ]);
+      const recentSeqs = historySeqs(recent.messages);
+      expect(recent.hasMore).toBe(true);
+      expect(recentSeqs).toHaveLength(2);
+      expect(recent.oldestSeq).toBe(recentSeqs[0]);
+      expect(recent.newestSeq).toBe(recentSeqs[1]);
+      expect(recent.nextBeforeSeq).toBe(recentSeqs[0]);
+
+      const newest = await fetchHistoryPayload(ws, { limit: 1 });
+      expect(newest.messages?.map((message) => JSON.stringify(message))).toEqual([
+        expect.stringContaining("recent answer"),
+      ]);
+      const newestSeqs = historySeqs(newest.messages);
+      expect(newest.hasMore).toBe(true);
+      expect(newestSeqs).toHaveLength(1);
+      expect(newest.oldestSeq).toBe(newestSeqs[0]);
+      expect(newest.nextBeforeSeq).toBe(newestSeqs[0]);
+
+      const older = await fetchHistoryPayload(ws, {
+        beforeSeq: recent.nextBeforeSeq ?? 0,
+        limit: 2,
+      });
+      expect(older.messages?.map((message) => JSON.stringify(message))).toEqual([
+        expect.stringContaining("older question"),
+        expect.stringContaining("older answer"),
+      ]);
+      const olderSeqs = historySeqs(older.messages);
+      expect(older.hasMore).toBe(false);
+      expect(Math.max(...olderSeqs)).toBeLessThan(recentSeqs[0] ?? Number.MAX_SAFE_INTEGER);
+      expect(older.oldestSeq).toBe(olderSeqs[0]);
+      expect(older.newestSeq).toBe(olderSeqs[1]);
+      expect(older.nextBeforeSeq).toBeNull();
+    });
+  });
+
+  test("chat.history cursors follow messages returned after byte caps", async () => {
+    await withGatewayChatHarness(async ({ ws, createSessionDir }) => {
+      const sessionDir = await prepareMainHistoryHarness({
+        ws,
+        createSessionDir,
+        historyMaxBytes: 1_600,
+      });
+      const text = "x".repeat(520);
+      await writeMainSessionTranscript(
+        sessionDir,
+        Array.from({ length: 6 }, (_value, index) =>
+          JSON.stringify({
+            message: {
+              role: index % 2 === 0 ? "user" : "assistant",
+              content: [{ type: "text", text: `history-${index + 1}:${text}` }],
+              timestamp: index + 1,
+            },
+          }),
+        ),
+      );
+
+      const recent = await fetchHistoryPayload(ws, { limit: 6 });
+      const recentSeqs = historySeqs(recent.messages);
+      expect(recentSeqs.length).toBeGreaterThan(0);
+      expect(recentSeqs[0]).toBeGreaterThan(1);
+      expect(recent.hasMore).toBe(true);
+      expect(recent.oldestSeq).toBe(recentSeqs[0]);
+      expect(recent.nextBeforeSeq).toBe(recentSeqs[0]);
+
+      const older = await fetchHistoryPayload(ws, {
+        beforeSeq: recent.nextBeforeSeq ?? undefined,
+        limit: 6,
+      });
+      const olderSeqs = historySeqs(older.messages);
+      expect(Math.max(...olderSeqs)).toBeLessThan(recentSeqs[0]);
+    });
+  });
+
+  test("chat.history backfills visible messages when the recent tail is hidden", async () => {
+    await withGatewayChatHarness(async ({ ws, createSessionDir }) => {
+      const sessionDir = await prepareMainHistoryHarness({ ws, createSessionDir });
+      await writeMainSessionTranscript(sessionDir, [
+        JSON.stringify({
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "visible before hidden tail" }],
+            timestamp: 1,
+          },
+        }),
+        JSON.stringify({
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "answer before hidden tail" }],
+            timestamp: 2,
+          },
+        }),
+        ...Array.from({ length: 175 }, (_value, index) =>
+          JSON.stringify({
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "NO_REPLY" }],
+              timestamp: 3 + index,
+            },
+          }),
+        ),
+      ]);
+
+      const recent = await fetchHistoryPayload(ws, { limit: 2 });
+      expect(recent.messages?.map((message) => JSON.stringify(message))).toEqual([
+        expect.stringContaining("visible before hidden tail"),
+        expect.stringContaining("answer before hidden tail"),
+      ]);
+      expect(recent.hasMore).toBe(false);
+    });
+  });
+
+  test("chat.history keeps backfilling when the recent tail is underfilled", async () => {
+    await withGatewayChatHarness(async ({ ws, createSessionDir }) => {
+      const sessionDir = await prepareMainHistoryHarness({ ws, createSessionDir });
+      await writeMainSessionTranscript(sessionDir, [
+        JSON.stringify({
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "older visible question" }],
+            timestamp: 1,
+          },
+        }),
+        ...Array.from({ length: 175 }, (_value, index) =>
+          JSON.stringify({
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "NO_REPLY" }],
+              timestamp: 2 + index,
+            },
+          }),
+        ),
+        JSON.stringify({
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "recent visible question" }],
+            timestamp: 178,
+          },
+        }),
+      ]);
+
+      const recent = await fetchHistoryPayload(ws, { limit: 2 });
+      expect(recent.messages?.map((message) => JSON.stringify(message))).toEqual([
+        expect.stringContaining("older visible question"),
+        expect.stringContaining("recent visible question"),
+      ]);
+      expect(recent.hasMore).toBe(false);
+    });
   });
 
   test("chat.send returns in_flight when duplicate attachment send wins parsing race", async () => {
@@ -1028,6 +1275,93 @@ describe("gateway server chat", () => {
         expect(capturedOpts?.disableBlockStreaming).toBeUndefined();
       } finally {
         testState.agentConfig = undefined;
+      }
+    });
+  });
+
+  test("chat.history keeps imported claude-cli history on the first page only", async () => {
+    await withGatewayChatHarness(async ({ ws, createSessionDir }) => {
+      await connectOk(ws);
+      const sessionDir = await createSessionDir();
+      const originalHome = process.env.HOME;
+      const homeDir = path.join(sessionDir, "home");
+      const cliSessionId = "5b8b202c-f6bb-4046-9475-d2f15fd07531";
+      const claudeProjectsDir = path.join(homeDir, ".claude", "projects", "workspace");
+      await fs.mkdir(claudeProjectsDir, { recursive: true });
+      await fs.writeFile(
+        path.join(claudeProjectsDir, `${cliSessionId}.jsonl`),
+        [
+          ["user-1", "user", "older imported user"],
+          ["assistant-1", "assistant", "older imported assistant"],
+          ["user-2", "user", "recent imported user"],
+          ["assistant-2", "assistant", "recent imported assistant"],
+        ]
+          .map(([uuid, type, text], index) =>
+            JSON.stringify({
+              type,
+              uuid,
+              timestamp: `2026-03-26T16:29:5${index}.500Z`,
+              message: {
+                role: type,
+                content: type === "user" ? text : [{ type: "text", text }],
+              },
+            }),
+          )
+          .join("\n"),
+        "utf-8",
+      );
+      process.env.HOME = homeDir;
+      try {
+        await writeSessionStore({
+          entries: {
+            main: {
+              sessionId: "sess-main",
+              updatedAt: Date.now(),
+              modelProvider: "claude-cli",
+              model: "claude-sonnet-4-6",
+              cliSessionBindings: {
+                "claude-cli": {
+                  sessionId: cliSessionId,
+                },
+              },
+            },
+          },
+        });
+        await writeMainSessionTranscript(sessionDir, [
+          JSON.stringify({
+            message: {
+              role: "user",
+              content: [{ type: "text", text: "local webchat follow-up" }],
+              timestamp: Date.parse("2026-03-26T16:30:00.000Z"),
+            },
+          }),
+        ]);
+
+        const recent = await fetchHistoryPayload(ws, { limit: 2 });
+        expect(recent.messages?.map((message) => JSON.stringify(message))).toEqual([
+          expect.stringContaining("recent imported assistant"),
+          expect.stringContaining("local webchat follow-up"),
+        ]);
+        const recentSeqs = historySeqs(recent.messages);
+        expect(recent.hasMore).toBe(false);
+        expect(recentSeqs).toHaveLength(1);
+        expect(recent.oldestSeq).toBe(recentSeqs[0]);
+        expect(recent.newestSeq).toBe(recentSeqs[0]);
+        expect(recent.nextBeforeSeq).toBeNull();
+
+        const older = await fetchHistoryPayload(ws, {
+          beforeSeq: recentSeqs[0] ?? 0,
+          limit: 2,
+        });
+        expect(older.messages).toEqual([]);
+        expect(older.hasMore).toBe(false);
+        expect(older.nextBeforeSeq).toBeNull();
+      } finally {
+        if (originalHome === undefined) {
+          delete process.env.HOME;
+        } else {
+          process.env.HOME = originalHome;
+        }
       }
     });
   });

@@ -236,7 +236,7 @@ describe("buildChatItems", () => {
     expect(groups).toStrictEqual([]);
   });
 
-  it("renders only the last 100 history messages and shows a hidden-count notice", () => {
+  it("renders loaded history beyond the input-recall window", () => {
     const items = buildChatItems(
       createProps({
         messages: Array.from({ length: 105 }, (_, index) => ({
@@ -249,13 +249,9 @@ describe("buildChatItems", () => {
 
     const groups = items.filter((item) => item.kind === "group");
 
-    const noticeGroup = requireGroup(items[0]);
-    expect(noticeGroup.messages).toHaveLength(1);
-    const noticeMessage = messageRecord(noticeGroup);
-    expect(noticeMessage.role).toBe("system");
-    expect(noticeMessage.content).toBe("Showing last 100 messages (5 hidden).");
-    expect(groups).toHaveLength(101);
-    expect(messageRecord(groups[1]).content).toBe("message 5");
+    expect(items[0].kind).toBe("group");
+    expect(groups).toHaveLength(105);
+    expect(messageRecord(groups[0]).content).toBe("message 0");
     expect(messageRecord(groups[groups.length - 1]).content).toBe("message 104");
   });
 

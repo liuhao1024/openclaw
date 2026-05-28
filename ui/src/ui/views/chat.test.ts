@@ -482,11 +482,14 @@ function renderChatView(overrides: Partial<Parameters<typeof renderChat>[0]> = {
       localMediaPreviewRoots: [],
       assistantAttachmentAuthToken: null,
       autoExpandToolCalls: false,
+      historyHasMore: false,
+      historyLoadingMore: false,
       attachments: [],
       onAttachmentsChange: () => undefined,
       showNewMessages: false,
       onScrollToBottom: () => undefined,
       onRefresh: () => undefined,
+      onLoadOlderHistory: () => undefined,
       onToggleFocusMode: () => undefined,
       getDraft: () => "",
       onDraftChange: () => undefined,
@@ -538,6 +541,40 @@ describe("chat compaction divider", () => {
     button!.click();
 
     expect(onOpenSessionCheckpoints).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("chat history pagination", () => {
+  it("renders and wires the load older history control", () => {
+    const onLoadOlderHistory = vi.fn();
+    const container = renderChatView({
+      historyHasMore: true,
+      historyLoadingMore: false,
+      onLoadOlderHistory,
+      messages: [{ role: "assistant", content: "recent answer" }],
+    });
+
+    const button = container.querySelector<HTMLButtonElement>(".chat-history-load-more");
+    expect(button).toBeInstanceOf(HTMLButtonElement);
+    expect(button?.disabled).toBe(false);
+    expect(button?.textContent?.trim()).toBe("Load older messages");
+
+    button!.click();
+
+    expect(onLoadOlderHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the load older history control while an older page is loading", () => {
+    const container = renderChatView({
+      historyHasMore: true,
+      historyLoadingMore: true,
+      messages: [{ role: "assistant", content: "recent answer" }],
+    });
+
+    const button = container.querySelector<HTMLButtonElement>(".chat-history-load-more");
+    expect(button).toBeInstanceOf(HTMLButtonElement);
+    expect(button?.disabled).toBe(true);
+    expect(button?.textContent?.trim()).toBe("Loading older messages...");
   });
 });
 

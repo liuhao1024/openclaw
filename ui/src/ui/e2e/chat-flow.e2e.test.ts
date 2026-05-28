@@ -84,4 +84,78 @@ describeControlUiE2e("Control UI mocked Gateway E2E", () => {
       await context.close();
     }
   });
+
+  it("loads older chat history through the GUI", async () => {
+    const context = await browser.newContext({
+      locale: "en-US",
+      serviceWorkers: "block",
+      viewport: { height: 900, width: 1280 },
+    });
+    const page = await context.newPage();
+    const gateway = await installMockGateway(page, {
+      historyMessages: [],
+      methodResponses: {
+        "chat.history": {
+          cases: [
+            {
+              match: { beforeSeq: 10 },
+              response: {
+                messages: [
+                  {
+                    __openclaw: { seq: 1 },
+                    content: [
+                      { text: "Older user turn from before the tool-heavy tail.", type: "text" },
+                    ],
+                    role: "user",
+                    timestamp: 1,
+                  },
+                ],
+                hasMore: false,
+                nextBeforeSeq: null,
+                oldestSeq: 1,
+                newestSeq: 1,
+                sessionId: "control-ui-e2e-session",
+                thinkingLevel: null,
+              },
+            },
+            {
+              response: {
+                messages: [
+                  {
+                    __openclaw: { seq: 10 },
+                    content: [{ text: "Recent visible assistant turn.", type: "text" }],
+                    role: "assistant",
+                    timestamp: 10,
+                  },
+                ],
+                hasMore: true,
+                nextBeforeSeq: 10,
+                oldestSeq: 10,
+                newestSeq: 10,
+                sessionId: "control-ui-e2e-session",
+                thinkingLevel: null,
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    try {
+      await page.goto(`${server.baseUrl}chat`);
+      await page.getByText("Recent visible assistant turn.").waitFor({ timeout: 10_000 });
+
+      await page.getByRole("button", { name: "Load older messages" }).click();
+
+      const requests = await gateway.getRequests("chat.history");
+      expect(requests.map((request) => requireRecord(request.params))).toContainEqual(
+        expect.objectContaining({ beforeSeq: 10 }),
+      );
+      await page
+        .getByText("Older user turn from before the tool-heavy tail.")
+        .waitFor({ timeout: 10_000 });
+    } finally {
+      await context.close();
+    }
+  });
 });

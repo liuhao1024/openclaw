@@ -4,6 +4,7 @@ import * as protocol from "./index.js";
 import {
   formatValidationErrors,
   validateChatEvent,
+  validateChatHistoryParams,
   validateCommandsListParams,
   validateConnectParams,
   validateModelsListParams,
@@ -602,6 +603,19 @@ describe("validateModelsListParams", () => {
   it("rejects unknown model catalog views and extra fields", () => {
     expect(validateModelsListParams({ view: "available" })).toBe(false);
     expect(validateModelsListParams({ view: "configured", provider: "minimax" })).toBe(false);
+  });
+});
+
+describe("validateChatHistoryParams", () => {
+  it("accepts bounded history pagination params", () => {
+    expect(validateChatHistoryParams({ sessionKey: "main" })).toBe(true);
+    expect(validateChatHistoryParams({ sessionKey: "main", limit: 25, beforeSeq: 101 })).toBe(true);
+  });
+
+  it("rejects invalid history pagination params", () => {
+    expect(validateChatHistoryParams({ sessionKey: "main", beforeSeq: 0 })).toBe(false);
+    expect(validateChatHistoryParams({ sessionKey: "main", beforeSeq: 1.5 })).toBe(false);
+    expect(validateChatHistoryParams({ sessionKey: "main", beforeSeq: "101" })).toBe(false);
   });
 });
 

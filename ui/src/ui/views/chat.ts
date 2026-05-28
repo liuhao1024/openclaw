@@ -84,6 +84,8 @@ export type ChatProps = {
   showToolCalls: boolean;
   loading: boolean;
   sending: boolean;
+  historyHasMore?: boolean;
+  historyLoadingMore?: boolean;
   canAbort?: boolean;
   runStatus?: ChatRunUiStatus | null;
   compactionStatus?: CompactionStatus | null;
@@ -138,6 +140,7 @@ export type ChatProps = {
   showNewMessages?: boolean;
   onScrollToBottom?: () => void;
   onRefresh: () => void;
+  onLoadOlderHistory?: () => void | Promise<void>;
   onToggleFocusMode: () => void;
   getDraft?: () => string;
   onDraftChange: (next: string) => void;
@@ -1128,6 +1131,8 @@ export function renderChat(props: ChatProps) {
   const hasRealtimeTalkConversation = (props.realtimeTalkConversation?.length ?? 0) > 0;
   const isEmpty = chatItems.length === 0 && !props.loading && !hasRealtimeTalkConversation;
   const showLoadingSkeleton = props.loading && chatItems.length === 0;
+  const showLoadOlder = Boolean(props.historyHasMore && props.onLoadOlderHistory);
+  const loadOlderDisabled = Boolean(props.loading || props.historyLoadingMore);
 
   const thread = html`
     <div
@@ -1138,6 +1143,24 @@ export function renderChat(props: ChatProps) {
       @click=${handleCodeBlockCopy}
     >
       <div class="chat-thread-inner">
+        ${showLoadOlder
+          ? html`
+              <div class="chat-history-load-more-row">
+                <button
+                  type="button"
+                  class="btn btn--subtle btn--sm chat-history-load-more"
+                  ?disabled=${loadOlderDisabled}
+                  @click=${() => {
+                    if (!loadOlderDisabled) {
+                      void props.onLoadOlderHistory?.();
+                    }
+                  }}
+                >
+                  ${props.historyLoadingMore ? "Loading older messages..." : "Load older messages"}
+                </button>
+              </div>
+            `
+          : nothing}
         ${showLoadingSkeleton
           ? html`
               <div class="chat-loading-skeleton" aria-label="Loading chat">

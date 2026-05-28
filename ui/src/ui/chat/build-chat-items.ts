@@ -3,7 +3,7 @@ import {
   isAssistantHeartbeatAckForDisplay,
   stripHeartbeatTokenForDisplay,
 } from "./heartbeat-display.ts";
-import { CHAT_HISTORY_RENDER_CHAR_BUDGET, CHAT_HISTORY_RENDER_LIMIT } from "./history-limits.ts";
+import { CHAT_HISTORY_RENDER_CHAR_BUDGET } from "./history-limits.ts";
 import { extractTextCached } from "./message-extract.ts";
 import { normalizeMessage, stripMessageDisplayMetadataText } from "./message-normalizer.ts";
 import { normalizeRoleForGrouping } from "./role-normalizer.ts";
@@ -441,9 +441,6 @@ function resolveHistoryStartIndex(messages: unknown[], showToolCalls: boolean): 
     const message = messages[index];
     if (isHiddenToolMessage(message, showToolCalls)) {
       continue;
-    }
-    if (visibleCount >= CHAT_HISTORY_RENDER_LIMIT) {
-      break;
     }
     const remainingBudget = Math.max(1, CHAT_HISTORY_RENDER_CHAR_BUDGET - renderChars + 1);
     const messageChars = estimateMessageRenderChars(message, remainingBudget);

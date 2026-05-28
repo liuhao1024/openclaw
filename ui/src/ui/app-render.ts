@@ -44,7 +44,7 @@ import {
 } from "./controllers/agents.ts";
 import { setAssistantAvatarOverride } from "./controllers/assistant-identity.ts";
 import { loadChannels } from "./controllers/channels.ts";
-import { loadChatHistory } from "./controllers/chat.ts";
+import { loadChatHistory, loadOlderChatHistory } from "./controllers/chat.ts";
 import {
   applyConfig,
   ensureAgentConfigEntry,
@@ -891,6 +891,43 @@ function renderCronQuickCreateForTab(
       state.cronQuickCreateDraft = null;
       requestHostUpdate?.();
     },
+  });
+}
+
+async function loadOlderChatHistoryPreservingScroll(
+  state: AppViewState,
+  requestHostUpdate: (() => void) | undefined,
+) {
+  const host = state as AppViewState & {
+    querySelector?: (selectors: string) => Element | null;
+    updateComplete?: Promise<unknown>;
+  };
+  const scroller =
+    typeof host.querySelector === "function"
+      ? (host.querySelector(".chat-thread") as HTMLElement | null)
+      : null;
+  const previousHeight = scroller?.scrollHeight;
+  const previousTop = scroller?.scrollTop;
+
+  const loadPromise = loadOlderChatHistory(state);
+  requestHostUpdate?.();
+  await loadPromise;
+  requestHostUpdate?.();
+
+  if (
+    !scroller ||
+    typeof previousHeight !== "number" ||
+    typeof previousTop !== "number" ||
+    !host.updateComplete
+  ) {
+    return;
+  }
+  await host.updateComplete;
+  requestAnimationFrame(() => {
+    const heightDelta = scroller.scrollHeight - previousHeight;
+    if (heightDelta > 0) {
+      scroller.scrollTop = previousTop + heightDelta;
+    }
   });
 }
 
@@ -2804,6 +2841,11 @@ export function renderApp(state: AppViewState) {
                     state.resetToolStream();
                     return refreshChat(state, { awaitHistory: true, scheduleScroll: false });
                   },
+                  historyHasMore: state.chatHistoryHasMore,
+                  historyLoadingMore: state.chatHistoryLoadingMore,
+                  onLoadOlderHistory: async () => {
+                    await loadOlderChatHistoryPreservingScroll(state, requestHostUpdate);
+                  },
                   onToggleFocusMode: () => {
                     if (state.onboarding) {
                       return;
@@ -2850,6 +2892,9 @@ export function renderApp(state: AppViewState) {
                     try {
                       await state.client.request("sessions.reset", { key: state.sessionKey });
                       state.chatMessages = [];
+                      state.chatHistoryBeforeSeq = null;
+                      state.chatHistoryHasMore = false;
+                      state.chatHistoryLoadingMore = false;
                       state.chatSideResult = null;
                       reconcileChatRunLifecycle(
                         state as unknown as Parameters<typeof reconcileChatRunLifecycle>[0],

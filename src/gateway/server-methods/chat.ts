@@ -126,10 +126,10 @@ import { readSessionTranscriptIndex } from "../session-transcript-index.fs.js";
 import {
   capArrayByJsonBytes,
   loadSessionEntry,
+  readBoundedRecentSessionMessagesWithSeqAsync,
   resolveGatewayModelSupportsImages,
   resolveGatewaySessionThinkingDefault,
   resolveDeletedAgentIdFromSessionKey,
-  readRecentSessionMessagesAsync,
   resolveSessionModelRef,
 } from "../session-utils.js";
 import { formatForLog } from "../ws-log.js";
@@ -1203,7 +1203,10 @@ function messageContainsToolHistoryContent(message: unknown): boolean {
   });
 }
 
-export function augmentChatHistoryWithCanvasBlocks(messages: unknown[]): unknown[] {
+export function augmentChatHistoryWithCanvasBlocks(
+  messages: unknown[],
+  options?: { flushPendingToLastAssistant?: boolean },
+): unknown[] {
   if (messages.length === 0) {
     return messages;
   }
@@ -1261,7 +1264,7 @@ export function augmentChatHistoryWithCanvasBlocks(messages: unknown[]): unknown
       rawText: text ?? null,
     });
   }
-  if (pending.length > 0) {
+  if (pending.length > 0 && options?.flushPendingToLastAssistant !== false) {
     const targetIndex =
       lastRenderableAssistantIndex >= 0 ? lastRenderableAssistantIndex : lastAssistantIndex;
     if (targetIndex >= 0) {
@@ -1293,11 +1296,20 @@ export function buildOversizedHistoryPlaceholder(message?: unknown): Record<stri
     typeof (message as { timestamp?: unknown }).timestamp === "number"
       ? (message as { timestamp: number }).timestamp
       : Date.now();
+  const openclaw =
+    message &&
+    typeof message === "object" &&
+    !Array.isArray(message) &&
+    (message as Record<string, unknown>)["__openclaw"] &&
+    typeof (message as Record<string, unknown>)["__openclaw"] === "object" &&
+    !Array.isArray((message as Record<string, unknown>)["__openclaw"])
+      ? ((message as Record<string, unknown>)["__openclaw"] as Record<string, unknown>)
+      : {};
   return {
     role,
     timestamp,
     content: [{ type: "text", text: CHAT_HISTORY_OVERSIZED_PLACEHOLDER }],
-    __openclaw: { truncated: true, reason: "oversized" },
+    __openclaw: { ...openclaw, truncated: true, reason: "oversized" },
   };
 }
 
@@ -1340,6 +1352,159 @@ export function enforceChatHistoryFinalBudget(params: { messages: unknown[]; max
     return { messages: [placeholder], placeholderCount: 1 };
   }
   return { messages: [], placeholderCount: 0 };
+}
+
+function extractChatHistoryTranscriptSeq(message: unknown): number | null {
+  if (!message || typeof message !== "object" || Array.isArray(message)) {
+    return null;
+  }
+  const marker = (message as Record<string, unknown>)["__openclaw"];
+  if (!marker || typeof marker !== "object" || Array.isArray(marker)) {
+    return null;
+  }
+  const seq = (marker as { seq?: unknown }).seq;
+  return typeof seq === "number" && Number.isInteger(seq) && seq > 0 ? seq : null;
+}
+
+function buildChatHistoryPageMetadata(params: { hasMore: boolean; messages: unknown[] }): {
+  hasMore: boolean;
+  newestSeq?: number;
+  nextBeforeSeq: number | null;
+  oldestSeq?: number;
+} {
+  const seqs = params.messages.flatMap((message) => {
+    const seq = extractChatHistoryTranscriptSeq(message);
+    return typeof seq === "number" ? [seq] : [];
+  });
+  const oldestSeq = seqs.length > 0 ? Math.min(...seqs) : undefined;
+  const newestSeq = seqs.length > 0 ? Math.max(...seqs) : undefined;
+  return {
+    hasMore: params.hasMore && typeof oldestSeq === "number",
+    ...(typeof newestSeq === "number" ? { newestSeq } : {}),
+    nextBeforeSeq: params.hasMore && typeof oldestSeq === "number" ? oldestSeq : null,
+    ...(typeof oldestSeq === "number" ? { oldestSeq } : {}),
+  };
+}
+
+async function readLocalChatHistoryRawPageAsync(params: {
+  beforeSeq?: number;
+  effectiveMaxChars?: number;
+  maxHistoryBytes: number;
+  maxMessages: number;
+  sessionFile?: string;
+  sessionId: string | undefined;
+  storePath: string | undefined;
+}): Promise<{ hasMore: boolean; messages: unknown[] }> {
+  if (!params.sessionId || !params.storePath) {
+    return { hasMore: false, messages: [] };
+  }
+  const maxMessages = Math.max(1, Math.floor(params.maxMessages));
+  const rawReadMax = Math.min(5000, Math.max(maxMessages + 1, maxMessages * 50 + 50));
+  const messagesReversed: unknown[] = [];
+  let displayableCount = 0;
+  let beforeSeq = params.beforeSeq;
+  let needsOlderBoundaryContext = false;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const recent = await readBoundedRecentSessionMessagesWithSeqAsync(
+      params.sessionId,
+      params.storePath,
+      params.sessionFile,
+      {
+        beforeSeq,
+        maxMessages: rawReadMax,
+        maxBytes: Math.max(params.maxHistoryBytes * 2, 1024 * 1024),
+        maxLines: rawReadMax * 4,
+      },
+    );
+    const candidates =
+      typeof beforeSeq === "number"
+        ? recent.messages.filter((message) => {
+            const seq = extractChatHistoryTranscriptSeq(message);
+            return typeof seq === "number" && seq < beforeSeq!;
+          })
+        : recent.messages;
+    if (candidates.length === 0) {
+      break;
+    }
+    if (needsOlderBoundaryContext) {
+      messagesReversed.push(candidates[candidates.length - 1]);
+      return { hasMore: true, messages: messagesReversed.toReversed() };
+    }
+
+    for (let index = candidates.length - 1; index >= 0; index -= 1) {
+      const message = candidates[index];
+      messagesReversed.push(message);
+      const displayMessage = projectChatDisplayMessage(message, {
+        maxChars: params.effectiveMaxChars,
+      });
+      if (displayMessage) {
+        displayableCount += 1;
+        if (displayableCount > maxMessages) {
+          const boundaryContextMessage = candidates[index - 1];
+          if (boundaryContextMessage !== undefined) {
+            messagesReversed.push(boundaryContextMessage);
+            return { hasMore: true, messages: messagesReversed.toReversed() };
+          }
+          needsOlderBoundaryContext = true;
+          break;
+        }
+      }
+    }
+
+    const oldestSeq = extractChatHistoryTranscriptSeq(candidates[0]);
+    if (typeof oldestSeq !== "number") {
+      break;
+    }
+    beforeSeq = oldestSeq;
+  }
+
+  return {
+    hasMore: needsOlderBoundaryContext,
+    messages: messagesReversed.toReversed(),
+  };
+}
+
+async function readProjectedChatHistoryPageAsync(params: {
+  beforeSeq?: number;
+  effectiveMaxChars?: number;
+  entry: Parameters<typeof augmentChatHistoryWithCliSessionImports>[0]["entry"];
+  maxHistoryBytes: number;
+  maxMessages: number;
+  provider?: string;
+  sessionFile?: string;
+  sessionId: string | undefined;
+  storePath: string | undefined;
+}): Promise<{ hasMore: boolean; messages: unknown[] }> {
+  const sessionStartedAt =
+    typeof params.entry?.sessionStartedAt === "number" ? params.entry.sessionStartedAt : undefined;
+  const localPage = await readLocalChatHistoryRawPageAsync({
+    beforeSeq: params.beforeSeq,
+    effectiveMaxChars: params.effectiveMaxChars,
+    maxHistoryBytes: params.maxHistoryBytes,
+    maxMessages: params.maxMessages,
+    sessionFile: params.sessionFile,
+    sessionId: params.sessionId,
+    storePath: params.storePath,
+  });
+  const rawMessages =
+    typeof params.beforeSeq === "number"
+      ? localPage.messages
+      : augmentChatHistoryWithCliSessionImports({
+          entry: params.entry,
+          provider: params.provider,
+          localMessages: localPage.messages,
+        });
+  const projected = augmentChatHistoryWithCanvasBlocks(
+    projectRecentChatDisplayMessages(
+      dropPreSessionStartAnnouncePairs(rawMessages, sessionStartedAt),
+      { maxChars: params.effectiveMaxChars },
+    ),
+    typeof params.beforeSeq === "number" ? { flushPendingToLastAssistant: false } : undefined,
+  );
+  return {
+    hasMore: localPage.hasMore,
+    messages: projected.slice(-params.maxMessages),
+  };
 }
 
 function resolveTranscriptPath(params: {
@@ -2089,20 +2254,6 @@ export function dropPreSessionStartAnnouncePairs(
   return changed ? kept : messages;
 }
 
-function dropLocalHistoryOverreadContextMessage(
-  messages: unknown[],
-  contextMessage: unknown,
-): unknown[] {
-  if (contextMessage === undefined) {
-    return messages;
-  }
-  const index = messages.indexOf(contextMessage);
-  if (index < 0) {
-    return messages;
-  }
-  return [...messages.slice(0, index), ...messages.slice(index + 1)];
-}
-
 export const chatHandlers: GatewayRequestHandlers = {
   "chat.history": async ({ params, respond, context }) => {
     if (!validateChatHistoryParams(params)) {
@@ -2116,7 +2267,8 @@ export const chatHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const { sessionKey, limit, maxChars } = params as {
+    const { sessionKey, limit, maxChars, beforeSeq } = params as {
+      beforeSeq?: number;
       sessionKey: string;
       limit?: number;
       maxChars?: number;
@@ -2129,46 +2281,22 @@ export const chatHandlers: GatewayRequestHandlers = {
     const defaultLimit = 200;
     const requested = typeof limit === "number" ? limit : defaultLimit;
     const max = Math.min(hardMax, requested);
-    const localReadMax = max > 0 ? max + 1 : 0;
     const maxHistoryBytes = getMaxChatHistoryMessagesBytes();
-    const localMessages =
-      sessionId && storePath
-        ? await readRecentSessionMessagesAsync(sessionId, storePath, entry?.sessionFile, {
-            maxMessages: localReadMax,
-            maxBytes: Math.max(maxHistoryBytes * 2, 1024 * 1024),
-          })
-        : [];
-    const overreadContextMessage = localMessages.length > max ? localMessages[0] : undefined;
-    const localMessagesWithBoundaryFilter = dropLocalHistoryOverreadContextMessage(
-      dropPreSessionStartAnnouncePairs(
-        localMessages,
-        typeof entry?.sessionStartedAt === "number" ? entry.sessionStartedAt : undefined,
-      ),
-      overreadContextMessage,
-    );
-    const rawMessages = augmentChatHistoryWithCliSessionImports({
-      entry,
-      provider: resolvedSessionModel.provider,
-      localMessages: localMessagesWithBoundaryFilter,
-    });
-    // Drop subagent_announce pairs (user inter-session announce + adjacent
-    // assistant) whose record timestamp predates the current session's
-    // sessionStartedAt. Run after CLI history imports too, because those
-    // timestamped messages share the same chat.history response surface.
-    const recencyFilteredMessages = dropPreSessionStartAnnouncePairs(
-      rawMessages,
-      typeof entry?.sessionStartedAt === "number" ? entry.sessionStartedAt : undefined,
-    );
     const effectiveMaxChars = resolveEffectiveChatHistoryMaxChars(cfg, maxChars);
-    const normalized = augmentChatHistoryWithCanvasBlocks(
-      projectRecentChatDisplayMessages(recencyFilteredMessages, {
-        maxChars: effectiveMaxChars,
-        maxMessages: max,
-      }),
-    );
+    const page = await readProjectedChatHistoryPageAsync({
+      beforeSeq,
+      effectiveMaxChars,
+      entry,
+      maxHistoryBytes,
+      maxMessages: max,
+      provider: resolvedSessionModel.provider,
+      sessionFile: entry?.sessionFile,
+      sessionId,
+      storePath,
+    });
     const perMessageHardCap = Math.min(CHAT_HISTORY_MAX_SINGLE_MESSAGE_BYTES, maxHistoryBytes);
     const replaced = replaceOversizedChatHistoryMessages({
-      messages: normalized,
+      messages: page.messages,
       maxSingleMessageBytes: perMessageHardCap,
     });
     scheduleChatHistoryManagedImageCleanup({ sessionKey, context });
@@ -2180,7 +2308,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       logLargePayload({
         surface: "gateway.chat.history",
         action: "truncated",
-        bytes: jsonUtf8Bytes(normalized),
+        bytes: jsonUtf8Bytes(page.messages),
         limitBytes: maxHistoryBytes,
         count: placeholderCount,
         reason: "chat_history_budget",
@@ -2199,10 +2327,28 @@ export const chatHandlers: GatewayRequestHandlers = {
       });
     }
     const verboseLevel = entry?.verboseLevel ?? cfg.agents?.defaults?.verboseDefault;
+    const preBudgetOldestSeq = replaced.messages
+      .map((message) => extractChatHistoryTranscriptSeq(message))
+      .find((seq) => typeof seq === "number");
+    const finalOldestSeq = bounded.messages
+      .map((message) => extractChatHistoryTranscriptSeq(message))
+      .find((seq) => typeof seq === "number");
+    const budgetDroppedOlderMessages =
+      typeof preBudgetOldestSeq === "number" &&
+      typeof finalOldestSeq === "number" &&
+      preBudgetOldestSeq < finalOldestSeq;
+    const pagination = buildChatHistoryPageMetadata({
+      hasMore: page.hasMore || budgetDroppedOlderMessages,
+      messages: bounded.messages,
+    });
     respond(true, {
       sessionKey,
       sessionId,
       messages: bounded.messages,
+      hasMore: pagination.hasMore,
+      nextBeforeSeq: pagination.nextBeforeSeq,
+      ...(typeof pagination.oldestSeq === "number" ? { oldestSeq: pagination.oldestSeq } : {}),
+      ...(typeof pagination.newestSeq === "number" ? { newestSeq: pagination.newestSeq } : {}),
       thinkingLevel,
       fastMode: entry?.fastMode,
       verboseLevel,

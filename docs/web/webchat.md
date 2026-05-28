@@ -24,6 +24,7 @@ Status: the macOS/iOS SwiftUI chat UI talks directly to the Gateway WebSocket.
 
 - The UI connects to the Gateway WebSocket and uses `chat.history`, `chat.send`, and `chat.inject`.
 - `chat.history` is bounded for stability: Gateway may truncate long text fields, omit heavy metadata, and replace oversized entries with `[chat.history omitted: message too large]`.
+- WebChat loads display-normalized history in pages. If older transcript entries exist, the UI shows **Load older messages** and requests the next bounded page before the oldest visible transcript sequence.
 - `chat.history` follows the active transcript branch for modern append-only session files, so abandoned rewrite branches and superseded prompt copies are not rendered in WebChat.
 - Compaction entries render as an explicit compacted-history divider. The divider explains that the compacted transcript is preserved as a checkpoint and links to the Sessions checkpoint controls, where operators can branch or restore from that compacted view when their permissions allow it.
 - Control UI remembers the backing Gateway `sessionId` returned by `chat.history` and includes it on follow-up `chat.send` calls, so reconnects and page refreshes continue the same stored conversation unless the user starts or resets a session.
@@ -81,6 +82,7 @@ Full configuration: [Configuration](/gateway/configuration)
 WebChat options:
 
 - `gateway.webchat.chatHistoryMaxChars`: maximum character count for text fields in `chat.history` responses. When a transcript entry exceeds this limit, Gateway truncates long text fields and may replace oversized messages with a placeholder. Per-request `maxChars` can also be sent by the client to override this default for a single `chat.history` call.
+- `chat.history` accepts `beforeSeq` for older-page loading. WebChat uses the `hasMore` and `nextBeforeSeq` response fields to page backward through bounded local transcript cursor numbers without unbounded transcript reads.
 
 Related global options:
 

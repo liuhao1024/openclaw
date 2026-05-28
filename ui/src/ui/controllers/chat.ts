@@ -271,6 +271,9 @@ export type ChatState = {
   currentSessionId?: string | null;
   chatLoading: boolean;
   chatMessages: unknown[];
+  chatHistoryBeforeSeq: number | null;
+  chatHistoryHasMore: boolean;
+  chatHistoryLoadingMore: boolean;
   chatThinkingLevel: string | null;
   chatSending: boolean;
   chatMessage: string;
@@ -280,6 +283,16 @@ export type ChatState = {
   chatStreamStartedAt: number | null;
   lastError: string | null;
   resetChatInputHistoryNavigation?: () => void;
+};
+
+type ChatHistoryResponse = {
+  hasMore?: boolean;
+  messages?: Array<unknown>;
+  newestSeq?: number;
+  nextBeforeSeq?: number | null;
+  oldestSeq?: number;
+  sessionId?: string;
+  thinkingLevel?: string;
 };
 
 export type ChatEventPayload = {
@@ -302,6 +315,43 @@ function maybeResetToolStream(state: ChatState) {
   }
 }
 
+function extractTranscriptSeq(message: unknown): number | null {
+  if (!message || typeof message !== "object" || Array.isArray(message)) {
+    return null;
+  }
+  const marker = (message as Record<string, unknown>)["__openclaw"];
+  if (!marker || typeof marker !== "object" || Array.isArray(marker)) {
+    return null;
+  }
+  const seq = (marker as { seq?: unknown }).seq;
+  return typeof seq === "number" && Number.isInteger(seq) && seq > 0 ? seq : null;
+}
+
+function applyChatHistoryPaginationState(state: ChatState, res: ChatHistoryResponse): void {
+  state.chatHistoryHasMore = res.hasMore === true;
+  state.chatHistoryBeforeSeq =
+    state.chatHistoryHasMore && typeof res.nextBeforeSeq === "number" ? res.nextBeforeSeq : null;
+  state.chatHistoryLoadingMore = false;
+}
+
+function prependOlderHistoryMessages(
+  olderMessages: unknown[],
+  currentMessages: unknown[],
+): unknown[] {
+  const currentSeqs = new Set<number>();
+  for (const message of currentMessages) {
+    const seq = extractTranscriptSeq(message);
+    if (typeof seq === "number") {
+      currentSeqs.add(seq);
+    }
+  }
+  const older = olderMessages.filter((message) => {
+    const seq = extractTranscriptSeq(message);
+    return typeof seq !== "number" || !currentSeqs.has(seq);
+  });
+  return older.length > 0 ? [...older, ...currentMessages] : currentMessages;
+}
+
 export async function loadChatHistory(state: ChatState) {
   if (!state.client || !state.connected) {
     return;
@@ -315,14 +365,13 @@ export async function loadChatHistory(state: ChatState) {
   state.chatLoading = true;
   state.lastError = null;
   try {
-    let res: { messages?: Array<unknown>; sessionId?: string; thinkingLevel?: string };
+    state.chatHistoryHasMore = false;
+    state.chatHistoryBeforeSeq = null;
+    state.chatHistoryLoadingMore = false;
+    let res: ChatHistoryResponse;
     for (;;) {
       try {
-        res = await state.client.request<{
-          messages?: Array<unknown>;
-          sessionId?: string;
-          thinkingLevel?: string;
-        }>("chat.history", {
+        res = await state.client.request<ChatHistoryResponse>("chat.history", {
           sessionKey,
           limit: CHAT_HISTORY_REQUEST_LIMIT,
           maxChars: CHAT_HISTORY_REQUEST_MAX_CHARS,
@@ -350,6 +399,7 @@ export async function loadChatHistory(state: ChatState) {
     const messages = Array.isArray(res.messages) ? res.messages : [];
     const visibleMessages = messages.filter((message) => !shouldHideHistoryMessage(message));
     state.chatMessages = preserveOptimisticTailMessages(visibleMessages, previousMessages);
+    applyChatHistoryPaginationState(state, res);
     state.currentSessionId =
       typeof res.sessionId === "string" && res.sessionId.trim() ? res.sessionId : null;
     state.chatThinkingLevel = res.thinkingLevel ?? null;
@@ -365,6 +415,9 @@ export async function loadChatHistory(state: ChatState) {
     if (isMissingOperatorReadScopeError(err)) {
       state.chatMessages = [];
       state.chatThinkingLevel = null;
+      state.chatHistoryHasMore = false;
+      state.chatHistoryBeforeSeq = null;
+      state.chatHistoryLoadingMore = false;
       state.lastError = formatMissingOperatorReadScopeMessage("existing chat history");
     } else {
       state.lastError = String(err);
@@ -372,6 +425,54 @@ export async function loadChatHistory(state: ChatState) {
   } finally {
     if (isLatestChatHistoryRequest(state, requestVersion)) {
       state.chatLoading = false;
+    }
+  }
+}
+
+export async function loadOlderChatHistory(state: ChatState) {
+  if (
+    !state.client ||
+    !state.connected ||
+    state.chatLoading ||
+    state.chatHistoryLoadingMore ||
+    !state.chatHistoryHasMore ||
+    typeof state.chatHistoryBeforeSeq !== "number"
+  ) {
+    return;
+  }
+  const sessionKey = state.sessionKey;
+  const beforeSeq = state.chatHistoryBeforeSeq;
+  const requestVersion = beginChatHistoryRequest(state);
+  state.chatHistoryLoadingMore = true;
+  state.lastError = null;
+  try {
+    const res = await state.client.request<ChatHistoryResponse>("chat.history", {
+      sessionKey,
+      limit: CHAT_HISTORY_REQUEST_LIMIT,
+      maxChars: CHAT_HISTORY_REQUEST_MAX_CHARS,
+      beforeSeq,
+    });
+    if (!shouldApplyChatHistoryResult(state, requestVersion, sessionKey)) {
+      return;
+    }
+    const messages = Array.isArray(res.messages) ? res.messages : [];
+    const visibleMessages = messages.filter((message) => !shouldHideHistoryMessage(message));
+    state.chatMessages = prependOlderHistoryMessages(visibleMessages, state.chatMessages);
+    applyChatHistoryPaginationState(state, res);
+  } catch (err) {
+    if (!shouldApplyChatHistoryResult(state, requestVersion, sessionKey)) {
+      return;
+    }
+    if (isMissingOperatorReadScopeError(err)) {
+      state.chatHistoryHasMore = false;
+      state.chatHistoryBeforeSeq = null;
+      state.lastError = formatMissingOperatorReadScopeMessage("older chat history");
+    } else {
+      state.lastError = String(err);
+    }
+  } finally {
+    if (isLatestChatHistoryRequest(state, requestVersion)) {
+      state.chatHistoryLoadingMore = false;
     }
   }
 }
