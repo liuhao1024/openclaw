@@ -169,6 +169,16 @@ function normalizeQaOptionalModelRef(input: string | undefined) {
   return model && model.length > 0 ? model : undefined;
 }
 
+function normalizeQaRuntimePairId(value: string): RuntimeId | undefined {
+  if (value === "openclaw" || value === "pi") {
+    return "pi";
+  }
+  if (value === "codex") {
+    return "codex";
+  }
+  return undefined;
+}
+
 function parseQaRuntimePair(value: string | undefined): [RuntimeId, RuntimeId] | undefined {
   if (!value?.trim()) {
     return undefined;
@@ -180,9 +190,11 @@ function parseQaRuntimePair(value: string | undefined): [RuntimeId, RuntimeId] |
   if (parts.length !== 2) {
     throw new Error('--runtime-pair must use exactly two runtimes, e.g. "pi,codex".');
   }
-  const [left, right] = parts;
-  if ((left !== "pi" && left !== "codex") || (right !== "pi" && right !== "codex")) {
-    throw new Error('--runtime-pair only supports "pi" and "codex".');
+  const [rawLeft, rawRight] = parts;
+  const left = normalizeQaRuntimePairId(rawLeft);
+  const right = normalizeQaRuntimePairId(rawRight);
+  if (!left || !right) {
+    throw new Error('--runtime-pair only supports "pi", "openclaw", and "codex".');
   }
   if (left === right) {
     throw new Error("--runtime-pair must compare two different runtimes.");
