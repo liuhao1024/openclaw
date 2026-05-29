@@ -1783,7 +1783,15 @@ describe("subagent registry seam flow", () => {
         .listSubagentRunsForRequester("agent:main:main")
         .find((entry) => entry.runId === "run-terminal-timeout");
       expect(run?.endedAt).toBe(222);
-      expectRecordFields(run?.outcome, { status: "timeout" }, "terminal timeout outcome");
+      expectRecordFields(
+        run?.outcome,
+        {
+          status: "timeout",
+          timeoutPhase: "provider",
+          providerStarted: true,
+        },
+        "terminal timeout outcome",
+      );
     });
     const waitCall = mocks.callGateway.mock.calls.find(
       ([request]) => (request as { method?: string }).method === "agent.wait",
@@ -1833,6 +1841,97 @@ describe("subagent registry seam flow", () => {
       expectRecordFields(run?.outcome, { status: "timeout" }, "attributed timeout outcome");
     });
     expect(mocks.scheduleOrphanRecovery).not.toHaveBeenCalled();
+    expect(mocks.runSubagentAnnounceFlow).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps hard agent.wait timeout attribution over late lifecycle success", async () => {
+    const startedAt = Date.parse("2026-03-24T12:00:00Z");
+    const timeoutAt = Date.parse("2026-03-24T12:00:08Z");
+    mocks.callGateway.mockImplementation(async (request: { method?: string }) => {
+      if (request.method === "agent.wait") {
+        vi.setSystemTime(timeoutAt);
+        return {
+          status: "timeout",
+          startedAt,
+          timeoutPhase: "provider",
+          providerStarted: true,
+        };
+      }
+      return {};
+    });
+    mocks.loadSessionStore.mockReturnValue({
+      "agent:main:subagent:child": {
+        sessionId: "sess-child",
+        status: "running",
+        startedAt,
+        updatedAt: startedAt,
+      },
+    });
+
+    mod.registerSubagentRun({
+      runId: "run-hard-wait-timeout-late-lifecycle-success",
+      childSessionKey: "agent:main:subagent:child",
+      requesterSessionKey: "agent:main:main",
+      requesterDisplayKey: "main",
+      task: "hard wait timeout then late lifecycle success",
+      cleanup: "keep",
+    });
+
+    let observedTimeoutAt: number | undefined;
+    await waitForFast(() => {
+      const run = mod
+        .listSubagentRunsForRequester("agent:main:main")
+        .find((entry) => entry.runId === "run-hard-wait-timeout-late-lifecycle-success");
+      expect(run?.endedAt).toBeGreaterThanOrEqual(timeoutAt);
+      expect(run?.endedAt).toBeLessThan(timeoutAt + 100);
+      observedTimeoutAt = run?.endedAt;
+      expectRecordFields(
+        run?.outcome,
+        {
+          status: "timeout",
+          timeoutPhase: "provider",
+          providerStarted: true,
+          startedAt,
+          endedAt: run?.endedAt,
+          elapsedMs: typeof run?.endedAt === "number" ? run.endedAt - startedAt : undefined,
+        },
+        "hard wait timeout outcome",
+      );
+    });
+    expect(observedTimeoutAt).toBeTypeOf("number");
+
+    const lastOnAgentEventCall = mocks.onAgentEvent.mock.calls[
+      mocks.onAgentEvent.mock.calls.length - 1
+    ] as unknown as
+      | [(evt: { runId: string; stream: string; data: Record<string, unknown> }) => void]
+      | undefined;
+    const lifecycleHandler = lastOnAgentEventCall?.[0];
+    expect(lifecycleHandler).toBeTypeOf("function");
+
+    lifecycleHandler?.({
+      runId: "run-hard-wait-timeout-late-lifecycle-success",
+      stream: "lifecycle",
+      data: {
+        phase: "end",
+        startedAt,
+        endedAt: timeoutAt + 1_000,
+      },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const run = mod
+      .listSubagentRunsForRequester("agent:main:main")
+      .find((entry) => entry.runId === "run-hard-wait-timeout-late-lifecycle-success");
+    expect(run?.endedAt).toBe(observedTimeoutAt);
+    expectRecordFields(
+      run?.outcome,
+      {
+        status: "timeout",
+        timeoutPhase: "provider",
+        providerStarted: true,
+      },
+      "preserved hard wait timeout outcome",
+    );
     expect(mocks.runSubagentAnnounceFlow).toHaveBeenCalledTimes(1);
   });
 

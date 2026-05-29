@@ -362,7 +362,11 @@ export function createSubagentRunManager(params: {
               childSessionKey: entry.childSessionKey,
               notBeforeMs: entry.startedAt ?? entry.createdAt,
             });
-      const completeAsRunTimeout = async (endedAt?: number, startedAt?: number) => {
+      const completeAsRunTimeout = async (
+        endedAt?: number,
+        startedAt?: number,
+        outcome: SubagentRunOutcome = { status: "timeout" },
+      ) => {
         if (typeof startedAt === "number" && Number.isFinite(startedAt)) {
           entry.startedAt = startedAt;
           if (typeof entry.sessionStartedAt !== "number") {
@@ -371,7 +375,7 @@ export function createSubagentRunManager(params: {
         }
         const timeoutCompletion: Parameters<typeof params.completeSubagentRun>[0] = {
           runId,
-          outcome: { status: "timeout" },
+          outcome,
           reason: SUBAGENT_ENDED_REASON_COMPLETE,
           sendFarewell: true,
           accountId: entry.requesterOrigin?.accountId,
@@ -388,8 +392,19 @@ export function createSubagentRunManager(params: {
       };
       if (waitStatus === "timeout") {
         const now = Date.now();
-        const hardTimeoutObservedAt =
-          hardRunTimeout && typeof wait.endedAt !== "number" ? waitStartedAt : wait.endedAt;
+        const hardTimeoutOutcome: SubagentRunOutcome =
+          hardRunTimeout && wait.timeoutPhase
+            ? {
+                status: "timeout",
+                timeoutPhase: wait.timeoutPhase,
+                ...(wait.providerStarted !== undefined
+                  ? { providerStarted: wait.providerStarted }
+                  : {}),
+              }
+            : { status: "timeout" };
+        const completeAsWaitTimeout = (endedAt?: number, startedAt?: number) =>
+          completeAsRunTimeout(endedAt, startedAt, hardTimeoutOutcome);
+        const hardTimeoutObservedAt = wait.endedAt;
         if (observedStartedAt !== undefined && entry.startedAt !== observedStartedAt) {
           entry.startedAt = observedStartedAt;
           if (typeof entry.sessionStartedAt !== "number") {
@@ -404,8 +419,9 @@ export function createSubagentRunManager(params: {
         const explicitRunTimeoutElapsed =
           typeof explicitRunTimeoutAt === "number" &&
           (hardTimeoutObservedAt ?? now) + WAIT_TIMEOUT_DEADLINE_SKEW_MS >= explicitRunTimeoutAt;
-        const hardRunTimeoutEndedAt =
-          hardTimeoutObservedAt ?? resolveHardRunTimeoutEndedAt(entry, now, observedStartedAt);
+        const hardRunTimeoutEndedAt = hardRunTimeout
+          ? (wait.endedAt ?? resolveHardRunTimeoutEndedAt(entry, now, observedStartedAt) ?? now)
+          : resolveHardRunTimeoutEndedAt(entry, now, observedStartedAt);
         const isTerminalWaitTimeout =
           typeof wait.endedAt === "number" ||
           typeof wait.stopReason === "string" ||
@@ -427,7 +443,7 @@ export function createSubagentRunManager(params: {
             now,
           });
           if (completionAfterDeadline !== undefined) {
-            await completeAsRunTimeout(completionAfterDeadline, completionStartedAt);
+            await completeAsWaitTimeout(completionAfterDeadline, completionStartedAt);
             return;
           }
           const completionPredatesHardTimeout =
@@ -439,7 +455,7 @@ export function createSubagentRunManager(params: {
             (typeof explicitRunTimeoutAt === "number" &&
               completion.endedAt <= explicitRunTimeoutAt);
           if (!completionPredatesHardTimeout || !completionPredatesExplicitTimeout) {
-            await completeAsRunTimeout(
+            await completeAsWaitTimeout(
               typeof wait.endedAt === "number"
                 ? wait.endedAt
                 : (hardRunTimeoutEndedAt ?? explicitRunTimeoutAt ?? now),
@@ -474,7 +490,7 @@ export function createSubagentRunManager(params: {
           if (timeoutAfterDeadline !== undefined) {
             timeoutEndedAt = timeoutAfterDeadline;
           }
-          await completeAsRunTimeout(timeoutEndedAt, observedStartedAt);
+          await completeAsWaitTimeout(timeoutEndedAt, observedStartedAt);
           return;
         }
         scheduleWaitRetry(
