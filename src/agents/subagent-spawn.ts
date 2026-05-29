@@ -1280,7 +1280,21 @@ export async function spawnSubagentDirect(
     ).find((entry) => entry.runId === childRunId);
     const runAlreadyTerminal =
       typeof registeredRun?.endedAt === "number" || registeredRun?.outcome != null;
-    if (!runAlreadyTerminal && runTimeoutSeconds > 0) {
+    if (runAlreadyTerminal) {
+      // Once registry cleanup/announcement wins, a late RPC response must not
+      // re-open the child as accepted without a live completion waiter.
+      const terminalStatus = registeredRun?.outcome?.status;
+      return {
+        status: "error",
+        error:
+          terminalStatus === "timeout"
+            ? "Subagent run timed out before the child agent acceptance was observed."
+            : "Subagent run completed before the child agent acceptance was observed.",
+        childSessionKey,
+        runId: childRunId,
+      };
+    }
+    if (runTimeoutSeconds > 0) {
       armSubagentRunTimeout({
         runId: childRunId,
         runTimeoutSeconds,

@@ -384,6 +384,57 @@ describe("spawnSubagentDirect workspace inheritance", () => {
     expect(findLastSessionDeleteCall()).toBeUndefined();
   });
 
+  it("does not report accepted when the registry timed out before acceptance was observed", async () => {
+    hoisted.listSubagentRunsForRequesterMock.mockReturnValue([
+      {
+        runId: "run-thread-register-fail",
+        endedAt: 1000,
+        outcome: { status: "timeout" },
+      },
+    ]);
+    hoisted.callGatewayMock.mockImplementation(
+      async (request: {
+        method?: string;
+        params?: { key?: string; deleteTranscript?: boolean; emitLifecycleHooks?: boolean };
+      }) => {
+        if (request.method === "sessions.patch") {
+          return { ok: true };
+        }
+        if (request.method === "agent") {
+          return { runId: "run-thread-register-fail", status: "accepted", acceptedAt: 5000 };
+        }
+        if (request.method === "sessions.delete") {
+          return { ok: true };
+        }
+        return {};
+      },
+    );
+
+    const result = await spawnSubagentDirect(
+      {
+        task: "accepted after provisional timeout",
+        timeout: 8,
+      },
+      {
+        agentSessionKey: "agent:main:main",
+        agentChannel: "discord",
+        agentAccountId: "acct-1",
+        agentTo: "user-1",
+        workspaceDir: "/tmp/requester-workspace",
+      },
+    );
+
+    expect(result.status).toBe("error");
+    expect(result.error).toBe(
+      "Subagent run timed out before the child agent acceptance was observed.",
+    );
+    expect(result.runId).toBe("run-thread-register-fail");
+    expect(result.childSessionKey).toMatch(/^agent:main:subagent:/);
+    expect(getRegisteredRun()?.deferCompletionWait).toBe(true);
+    expect(hoisted.startSubagentRunCompletionWaitMock).not.toHaveBeenCalled();
+    expect(findLastSessionDeleteCall()).toBeUndefined();
+  });
+
   it("keeps lifecycle hooks enabled when registerSubagentRun fails after thread binding succeeds", async () => {
     hoisted.hookRunner.hasHooks.mockImplementation((name?: string) => name === "subagent_spawning");
     hoisted.hookRunner.runSubagentSpawning.mockResolvedValue({
