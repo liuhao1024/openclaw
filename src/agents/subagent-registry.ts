@@ -1234,11 +1234,7 @@ function ensureListener() {
       const livenessState =
         typeof evt.data?.livenessState === "string" ? evt.data.livenessState : undefined;
       const stopReason = typeof evt.data?.stopReason === "string" ? evt.data.stopReason : undefined;
-      const timeoutPhase =
-        normalizeAgentRunTimeoutPhase(evt.data?.timeoutPhase) ??
-        (evt.data?.aborted === true && /\btimed?\s*out\b|timeout/i.test(error ?? "")
-          ? "provider"
-          : undefined);
+      const timeoutPhase = normalizeAgentRunTimeoutPhase(evt.data?.timeoutPhase);
       const explicitRunTimeoutAt = resolveSubagentRunTimeoutAt(entry, startedAt);
       const explicitRunTimeoutElapsed =
         typeof explicitRunTimeoutAt === "number" && endedAt >= explicitRunTimeoutAt;

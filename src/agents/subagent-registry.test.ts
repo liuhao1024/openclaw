@@ -4251,6 +4251,7 @@ describe("subagent registry seam flow", () => {
         startedAt: Date.parse("2026-03-24T12:00:00Z"),
         endedAt: Date.parse("2026-03-24T12:00:05Z"),
         aborted: true,
+        error: "Request timed out before a response was generated.",
       },
     });
     lifecycleHandler?.({
