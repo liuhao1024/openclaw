@@ -18,6 +18,7 @@ vi.mock("../../agents/agent-scope.js", () => ({
 }));
 
 const pluginToolMetaState = new Map<string, { pluginId: string; optional: boolean }>();
+const pluginToolMetaByObject = new WeakMap<object, { pluginId: string; optional: boolean }>();
 
 vi.mock("../../plugins/tools.js", () => ({
   buildPluginToolMetadataKey: (pluginId: string, toolName: string) =>
@@ -32,7 +33,19 @@ vi.mock("../../plugins/tools.js", () => ({
       description: "Matrix room helper\n\nACTIONS:\n- join\n- leave",
     },
   ]),
-  getPluginToolMeta: vi.fn((tool: { name: string }) => pluginToolMetaState.get(tool.name)),
+  getPluginToolMeta: vi.fn((tool: { name: string }) => {
+    if (typeof tool === "object" && tool) {
+      const meta = pluginToolMetaByObject.get(tool);
+      if (meta) {
+        return meta;
+      }
+    }
+    try {
+      return pluginToolMetaState.get(tool.name);
+    } catch {
+      return undefined;
+    }
+  }),
 }));
 
 type RespondCall = [boolean, unknown?, { code: number; message: string }?];
@@ -72,6 +85,16 @@ function respondCall(respond: ReturnType<typeof vi.fn>): RespondCall {
 describe("tools.catalog handler", () => {
   beforeEach(() => {
     pluginToolMetaState.clear();
+    vi.mocked(resolvePluginTools).mockClear();
+    vi.mocked(resolvePluginTools).mockReturnValue([
+      { name: "voice_call", label: "voice_call", description: "Plugin calling tool" },
+      {
+        name: "matrix_room",
+        label: "matrix_room",
+        displaySummary: "Summarized Matrix room helper.",
+        description: "Matrix room helper\n\nACTIONS:\n- join\n- leave",
+      },
+    ] as never);
     pluginToolMetaState.set("voice_call", { pluginId: "voice-call", optional: true });
     pluginToolMetaState.set("matrix_room", { pluginId: "matrix", optional: false });
   });
@@ -168,6 +191,88 @@ describe("tools.catalog handler", () => {
       .flatMap((group) => group.tools)
       .find((tool) => tool.id === "matrix_room");
     expect(matrixRoom?.description).toBe("Summarized Matrix room helper.");
+  });
+
+  it("omits unreadable plugin catalog tool names while preserving healthy siblings", async () => {
+    const unreadableName = {
+      label: "Unreadable name",
+      description: "This tool should not block the catalog.",
+    };
+    Object.defineProperty(unreadableName, "name", {
+      enumerable: true,
+      get() {
+        throw new Error("fuzzplugin catalog tool name is unreadable");
+      },
+    });
+    const unreadableDetails = {
+      name: "mockplugin_unreadable_details",
+    };
+    Object.defineProperty(unreadableDetails, "label", {
+      enumerable: true,
+      get() {
+        throw new Error("fuzzplugin catalog label is unreadable");
+      },
+    });
+    Object.defineProperty(unreadableDetails, "description", {
+      enumerable: true,
+      get() {
+        throw new Error("fuzzplugin catalog description is unreadable");
+      },
+    });
+    Object.defineProperty(unreadableDetails, "displaySummary", {
+      enumerable: true,
+      get() {
+        throw new Error("fuzzplugin catalog summary is unreadable");
+      },
+    });
+    const healthyTool = {
+      name: "mockplugin_lookup",
+      label: "Mock lookup",
+      description: "Lookup mock data",
+    };
+    pluginToolMetaByObject.set(unreadableDetails, { pluginId: "mockplugin", optional: false });
+    pluginToolMetaByObject.set(healthyTool, { pluginId: "mockplugin", optional: true });
+    vi.mocked(resolvePluginTools).mockReturnValueOnce([
+      unreadableName,
+      unreadableDetails,
+      healthyTool,
+    ] as never);
+
+    const { respond, invoke } = createInvokeParams({});
+    await invoke();
+
+    const call = respondCall(respond);
+    expect(call[0]).toBe(true);
+    const payload = call[1] as {
+      groups: Array<{
+        source: "core" | "plugin";
+        tools: Array<{
+          id: string;
+          label: string;
+          description: string;
+          pluginId?: string;
+          optional?: boolean;
+        }>;
+      }>;
+    };
+    const tools = payload.groups
+      .filter((group) => group.source === "plugin")
+      .flatMap((group) => group.tools);
+    expect(tools.map((tool) => tool.id)).toEqual([
+      "mockplugin_lookup",
+      "mockplugin_unreadable_details",
+    ]);
+    expect(tools.find((tool) => tool.id === "mockplugin_unreadable_details")).toEqual({
+      id: "mockplugin_unreadable_details",
+      label: "mockplugin_unreadable_details",
+      description: "Tool",
+      source: "plugin",
+      pluginId: "mockplugin",
+      optional: false,
+      risk: undefined,
+      tags: undefined,
+      defaultProfiles: [],
+    });
   });
 
   it("opts plugin tool catalog loads into gateway subagent binding", async () => {

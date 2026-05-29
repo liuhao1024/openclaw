@@ -48,6 +48,30 @@ type ToolCatalogGroup = {
   tools: ToolCatalogEntry[];
 };
 
+function readPluginCatalogToolField(
+  tool: unknown,
+  key: "name" | "label" | "description" | "displaySummary",
+): unknown {
+  try {
+    return (tool as Record<string, unknown>)[key];
+  } catch {
+    return undefined;
+  }
+}
+
+function readPluginCatalogToolName(tool: unknown): string | undefined {
+  const value = readPluginCatalogToolField(tool, "name");
+  return typeof value === "string" ? normalizeOptionalString(value) : undefined;
+}
+
+function readPluginCatalogToolString(
+  tool: unknown,
+  key: "label" | "description" | "displaySummary",
+): string | undefined {
+  const value = readPluginCatalogToolField(tool, key);
+  return typeof value === "string" ? value : undefined;
+}
+
 function resolveAgentIdOrRespondError(
   rawAgentId: unknown,
   respond: RespondFn,
@@ -121,6 +145,10 @@ function buildPluginGroups(params: {
   );
   const seenToolIds = new Set<string>();
   for (const tool of pluginTools) {
+    const toolName = readPluginCatalogToolName(tool);
+    if (!toolName) {
+      continue;
+    }
     const meta = getPluginToolMeta(tool);
     const pluginId = meta?.pluginId ?? "plugin";
     const groupId = `plugin:${pluginId}`;
@@ -134,19 +162,20 @@ function buildPluginGroups(params: {
         tools: [],
       } as ToolCatalogGroup);
     const ownedMetadata = meta?.pluginId
-      ? pluginToolMetadata.get(buildPluginToolMetadataKey(meta.pluginId, tool.name))
+      ? pluginToolMetadata.get(buildPluginToolMetadataKey(meta.pluginId, toolName))
       : undefined;
+    const toolLabel = readPluginCatalogToolString(tool, "label");
+    const toolDescription = readPluginCatalogToolString(tool, "description");
+    const toolDisplaySummary = readPluginCatalogToolString(tool, "displaySummary");
     existing.tools.push({
-      id: tool.name,
+      id: toolName,
       label:
         normalizeOptionalString(ownedMetadata?.displayName) ??
-        normalizeOptionalString(tool.label) ??
-        tool.name,
+        normalizeOptionalString(toolLabel) ??
+        toolName,
       description: summarizeToolDescriptionText({
-        rawDescription:
-          ownedMetadata?.description ??
-          (typeof tool.description === "string" ? tool.description : undefined),
-        displaySummary: tool.displaySummary,
+        rawDescription: ownedMetadata?.description ?? toolDescription,
+        displaySummary: toolDisplaySummary,
       }),
       source: "plugin",
       pluginId,
@@ -155,7 +184,7 @@ function buildPluginGroups(params: {
       tags: ownedMetadata?.tags,
       defaultProfiles: [],
     });
-    seenToolIds.add(tool.name);
+    seenToolIds.add(toolName);
     groups.set(groupId, existing);
   }
   for (const entry of activeRegistry?.tools ?? []) {
