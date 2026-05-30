@@ -300,6 +300,70 @@ describe("method scope resolution", () => {
     ]);
   });
 
+  it("skips unreadable plugin gateway method descriptor names while resolving healthy siblings", () => {
+    const registry = createEmptyPluginRegistry();
+    registry.gatewayHandlers["mockplugin.gateway.inspect"] = pluginHandler;
+    registry.gatewayMethodDescriptors = [
+      Object.create(null, {
+        name: {
+          enumerable: true,
+          get() {
+            throw new Error("fuzzplugin gateway method name is unreadable");
+          },
+        },
+        scope: { enumerable: true, value: "operator.admin" },
+      }) as never,
+      createPluginGatewayMethodDescriptor({
+        pluginId: "mockplugin",
+        name: "mockplugin.gateway.inspect",
+        handler: pluginHandler,
+        scope: "operator.read",
+      }),
+    ];
+    setActivePluginRegistry(registry);
+
+    expect(resolveLeastPrivilegeOperatorScopesForMethod("mockplugin.gateway.inspect")).toEqual([
+      "operator.read",
+    ]);
+    expect(
+      authorizeOperatorScopesForMethod("mockplugin.gateway.inspect", ["operator.read"]),
+    ).toEqual({
+      allowed: true,
+    });
+  });
+
+  it("fails closed when matched plugin gateway method descriptor scopes are unreadable", () => {
+    const registry = createEmptyPluginRegistry();
+    registry.gatewayHandlers["fuzzplugin.gateway.inspect"] = pluginHandler;
+    registry.gatewayMethodDescriptors = [
+      Object.create(null, {
+        name: { enumerable: true, value: "fuzzplugin.gateway.inspect" },
+        scope: {
+          enumerable: true,
+          get() {
+            throw new Error("fuzzplugin gateway method scope is unreadable");
+          },
+        },
+      }) as never,
+    ];
+    setActivePluginRegistry(registry);
+
+    expect(resolveLeastPrivilegeOperatorScopesForMethod("fuzzplugin.gateway.inspect")).toEqual([
+      "operator.admin",
+    ]);
+    expect(
+      authorizeOperatorScopesForMethod("fuzzplugin.gateway.inspect", ["operator.write"]),
+    ).toEqual({
+      allowed: false,
+      missingScope: "operator.admin",
+    });
+    expect(
+      authorizeOperatorScopesForMethod("fuzzplugin.gateway.inspect", ["operator.admin"]),
+    ).toEqual({
+      allowed: true,
+    });
+  });
+
   it("keeps reserved admin namespaces admin-only even if a plugin scope is narrower", () => {
     setPluginGatewayMethodScope(RESERVED_ADMIN_PLUGIN_METHOD, "operator.read");
 

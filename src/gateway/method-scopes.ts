@@ -59,6 +59,28 @@ function readNormalizedStringField(value: unknown, field: string): string | unde
   return normalizeSessionActionParam(read.value);
 }
 
+function resolveRegisteredGatewayMethodScope(method: string): OperatorScope | undefined {
+  const registry = getPluginRegistryState()?.activeRegistry;
+  const descriptors = readRecordField(registry, "gatewayMethodDescriptors");
+  if (!descriptors.ok || !Array.isArray(descriptors.value)) {
+    return undefined;
+  }
+  for (const descriptor of descriptors.value) {
+    if (readNormalizedStringField(descriptor, "name") !== method) {
+      continue;
+    }
+    const scope = readRecordField(descriptor, "scope");
+    if (!scope.ok) {
+      return ADMIN_SCOPE;
+    }
+    if (scope.value === "node" || scope.value === "dynamic") {
+      return undefined;
+    }
+    return isOperatorScope(scope.value) ? scope.value : ADMIN_SCOPE;
+  }
+  return undefined;
+}
+
 function resolveScopedMethod(method: string): OperatorScope | undefined {
   const explicitScope = resolveCoreOperatorGatewayMethodScope(method);
   if (explicitScope) {
@@ -68,11 +90,7 @@ function resolveScopedMethod(method: string): OperatorScope | undefined {
   if (reservedScope) {
     return reservedScope;
   }
-  const pluginDescriptor = getPluginRegistryState()?.activeRegistry?.gatewayMethodDescriptors?.find(
-    (descriptor) => descriptor.name === method,
-  );
-  const pluginScope = pluginDescriptor?.scope;
-  return pluginScope === "node" || pluginScope === "dynamic" ? undefined : pluginScope;
+  return resolveRegisteredGatewayMethodScope(method);
 }
 
 export function isApprovalMethod(method: string): boolean {
