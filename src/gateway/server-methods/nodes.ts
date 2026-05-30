@@ -1407,7 +1407,11 @@ export const nodeHandlers: GatewayRequestHandlers = {
           : null;
     await respondUnavailableOnThrow(respond, async () => {
       const { handleNodeEvent } = await import("../server-node-events.js");
-      const nodeId = client?.connect?.device?.id ?? client?.connect?.client?.id ?? "node";
+      const nodeId =
+        context.nodeRegistry.getByConnId(client?.connId)?.nodeId ??
+        client?.connect?.device?.id ??
+        client?.connect?.client?.id ??
+        "node";
       const nodeContext: NodeEventContext = {
         deps: context.deps,
         broadcast: context.broadcast,

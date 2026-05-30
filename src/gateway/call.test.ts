@@ -424,6 +424,27 @@ describe("callGateway url resolution", () => {
     expect(lastClientOptions?.token).toBe("test-token");
   });
 
+  it("loads config to prove explicit loopback backend shared-token auth", async () => {
+    getRuntimeConfig.mockReturnValue({
+      gateway: {
+        mode: "local",
+        bind: "loopback",
+        auth: { mode: "token", token: "shared-token" },
+      },
+    });
+
+    await callGateway({
+      method: "health",
+      url: "ws://127.0.0.1:18800",
+      token: "shared-token",
+    });
+
+    expect(getRuntimeConfig).toHaveBeenCalled();
+    expect(lastClientOptions?.url).toBe("ws://127.0.0.1:18800");
+    expect(lastClientOptions?.token).toBe("shared-token");
+    expect(lastClientOptions?.deviceIdentity).toBeNull();
+  });
+
   it("keeps direct-local backend shared-token auth independent of paired device state", async () => {
     setLocalLoopbackGatewayConfig();
     getRuntimeConfig.mockReturnValue({

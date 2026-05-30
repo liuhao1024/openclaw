@@ -609,8 +609,18 @@ async function resolveGatewayCallContext(
     urlOverride,
     explicitAuth,
   });
+  const shouldProbeExplicitBackendToken =
+    !opts.config &&
+    Boolean(explicitAuth.token) &&
+    (opts.mode ?? GATEWAY_CLIENT_MODES.BACKEND) === GATEWAY_CLIENT_MODES.BACKEND &&
+    (opts.clientName ?? GATEWAY_CLIENT_NAMES.GATEWAY_CLIENT) ===
+      GATEWAY_CLIENT_NAMES.GATEWAY_CLIENT &&
+    Boolean(urlOverride && isLoopbackGatewayUrl(urlOverride));
   const config =
-    opts.config ?? (canSkipConfigLoad ? ({} as OpenClawConfig) : await loadGatewayConfig());
+    opts.config ??
+    (canSkipConfigLoad && !shouldProbeExplicitBackendToken
+      ? ({} as OpenClawConfig)
+      : await loadGatewayConfig());
   const configPath = opts.configPath ?? resolveGatewayConfigPath(process.env);
   const isRemoteMode = config.gateway?.mode === "remote";
   const remote = isRemoteMode
@@ -697,6 +707,8 @@ async function resolveConfiguredGatewayCredentialsForExplicitToken(
       {
         ...context,
         explicitAuth: {},
+        urlOverride: undefined,
+        urlOverrideSource: undefined,
       },
       process.env,
     );
@@ -1095,7 +1107,14 @@ export async function callGatewayCli<T = Record<string, unknown>>(
   const scopes = Array.isArray(opts.scopes)
     ? opts.scopes
     : resolveGatewayCliScopes(opts.method, opts.params);
-  return await callGatewayWithScopes(opts, scopes);
+  return await callGatewayWithScopes(
+    {
+      ...opts,
+      mode: opts.mode ?? GATEWAY_CLIENT_MODES.CLI,
+      clientName: opts.clientName ?? GATEWAY_CLIENT_NAMES.CLI,
+    },
+    scopes,
+  );
 }
 
 export async function callGatewayLeastPrivilege<T = Record<string, unknown>>(
