@@ -332,6 +332,17 @@ function listReadableMemoryPromptSupplements(): MemoryPromptSupplementRegistrati
   return supplements;
 }
 
+function readRecordValue(record: unknown, field: string): unknown {
+  if (!record || typeof record !== "object") {
+    return undefined;
+  }
+  try {
+    return (record as Record<string, unknown>)[field];
+  } catch {
+    return undefined;
+  }
+}
+
 export function getMemoryPromptSectionBuilder(): MemoryPromptSectionBuilder | undefined {
   return memoryPluginState.capability?.capability.promptBuilder;
 }
@@ -383,21 +394,96 @@ export function hasMemoryRuntime(): boolean {
   return getMemoryRuntime() !== undefined;
 }
 
-function cloneMemoryPublicArtifact(
-  artifact: MemoryPluginPublicArtifact,
-): MemoryPluginPublicArtifact {
+function readMemoryPublicArtifact(value: unknown): MemoryPluginPublicArtifact | undefined {
+  const kind = readRecordValue(value, "kind");
+  const workspaceDir = readRecordValue(value, "workspaceDir");
+  const relativePath = readRecordValue(value, "relativePath");
+  const absolutePath = readRecordValue(value, "absolutePath");
+  const contentType = readRecordValue(value, "contentType");
+  const agentIds = readRecordValue(value, "agentIds");
+  if (
+    typeof kind !== "string" ||
+    typeof workspaceDir !== "string" ||
+    typeof relativePath !== "string" ||
+    typeof absolutePath !== "string" ||
+    !isMemoryPublicArtifactContentType(contentType)
+  ) {
+    return undefined;
+  }
   return {
-    ...artifact,
-    agentIds: [...artifact.agentIds],
+    kind,
+    workspaceDir,
+    relativePath,
+    absolutePath,
+    contentType,
+    agentIds: readMemoryPublicArtifactAgentIds(agentIds),
   };
+}
+
+function isMemoryPublicArtifactContentType(
+  value: unknown,
+): value is MemoryPluginPublicArtifactContentType {
+  return value === "markdown" || value === "json" || value === "text";
+}
+
+function readMemoryPublicArtifactAgentIds(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  let length: number;
+  try {
+    length = value.length;
+  } catch {
+    return [];
+  }
+  const agentIds: string[] = [];
+  for (let index = 0; index < length; index += 1) {
+    let agentId: unknown;
+    try {
+      agentId = value[index];
+    } catch {
+      continue;
+    }
+    if (typeof agentId === "string") {
+      agentIds.push(agentId);
+    }
+  }
+  return agentIds;
+}
+
+function readMemoryPublicArtifacts(value: unknown): MemoryPluginPublicArtifact[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  let length: number;
+  try {
+    length = value.length;
+  } catch {
+    return [];
+  }
+  const artifacts: MemoryPluginPublicArtifact[] = [];
+  for (let index = 0; index < length; index += 1) {
+    let artifact: unknown;
+    try {
+      artifact = value[index];
+    } catch {
+      continue;
+    }
+    const readable = readMemoryPublicArtifact(artifact);
+    if (readable) {
+      artifacts.push(readable);
+    }
+  }
+  return artifacts;
 }
 
 export async function listActiveMemoryPublicArtifacts(params: {
   cfg: OpenClawConfig;
 }): Promise<MemoryPluginPublicArtifact[]> {
-  const artifacts =
-    (await memoryPluginState.capability?.capability.publicArtifacts?.listArtifacts(params)) ?? [];
-  return artifacts.map(cloneMemoryPublicArtifact).toSorted((left, right) => {
+  const artifacts = readMemoryPublicArtifacts(
+    await memoryPluginState.capability?.capability.publicArtifacts?.listArtifacts(params),
+  );
+  return artifacts.toSorted((left, right) => {
     const workspaceOrder = left.workspaceDir.localeCompare(right.workspaceDir);
     if (workspaceOrder !== 0) {
       return workspaceOrder;

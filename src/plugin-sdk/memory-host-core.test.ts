@@ -83,6 +83,50 @@ describe("memory-host-core helpers", () => {
     ]);
   });
 
+  it("skips unreadable memory public artifact rows while preserving healthy siblings", async () => {
+    const artifacts = [
+      {
+        kind: "fuzzplugin-hidden",
+        workspaceDir: "/tmp/workspace",
+        relativePath: "hidden.md",
+        absolutePath: "/tmp/workspace/hidden.md",
+        agentIds: ["main"],
+        contentType: "markdown" as const,
+      },
+      {
+        kind: "mockplugin-memory-root",
+        workspaceDir: "/tmp/workspace",
+        relativePath: "MEMORY.md",
+        absolutePath: "/tmp/workspace/MEMORY.md",
+        agentIds: ["main"],
+        contentType: "markdown" as const,
+      },
+    ];
+    Object.defineProperty(artifacts, 0, {
+      get() {
+        throw new Error("fuzzplugin memory artifact exploded");
+      },
+    });
+    registerMemoryCapability("mockplugin", {
+      publicArtifacts: {
+        async listArtifacts() {
+          return artifacts;
+        },
+      },
+    });
+
+    await expect(listActiveMemoryPublicArtifacts({ cfg: {} as never })).resolves.toEqual([
+      {
+        kind: "mockplugin-memory-root",
+        workspaceDir: "/tmp/workspace",
+        relativePath: "MEMORY.md",
+        absolutePath: "/tmp/workspace/MEMORY.md",
+        agentIds: ["main"],
+        contentType: "markdown",
+      },
+    ]);
+  });
+
   it("lists shared public artifacts from memory workspaces", async () => {
     const fixtureRoot = await fs.mkdtemp(path.join(os.tmpdir(), "memory-host-public-artifacts-"));
     try {
