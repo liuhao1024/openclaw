@@ -59,7 +59,7 @@ vi.mock("./last-route.js", () => ({
 }));
 
 vi.mock("./message-line.js", () => ({
-  buildInboundLine: (params: { msg: { body: string } }) => params.msg.body,
+  buildInboundLine: (params: { msg: WebInboundMessage }) => params.msg.payload.body,
 }));
 
 vi.mock("./runtime-api.js", () => ({
@@ -93,19 +93,19 @@ vi.mock("./inbound-dispatch.js", () => ({
     combinedBody: string;
     commandAuthorized?: boolean;
     commandBody?: string;
-    msg: { body: string; mediaPath?: string; mediaType?: string };
+    msg: WebInboundMessage;
     mediaTranscribedIndexes?: number[];
     rawBody?: string;
     transcript?: string;
   }) => ({
     Body: params.combinedBody,
-    BodyForAgent: params.bodyForAgent ?? params.msg.body,
+    BodyForAgent: params.bodyForAgent ?? params.msg.payload.body,
     CommandAuthorized: params.commandAuthorized,
-    CommandBody: params.commandBody ?? params.msg.body,
-    MediaPath: params.msg.mediaPath,
-    MediaType: params.msg.mediaType,
+    CommandBody: params.commandBody ?? params.msg.payload.body,
+    MediaPath: params.msg.payload.media?.path,
+    MediaType: params.msg.payload.media?.type,
     MediaTranscribedIndexes: params.mediaTranscribedIndexes,
-    RawBody: params.rawBody ?? params.msg.body,
+    RawBody: params.rawBody ?? params.msg.payload.body,
     Transcript: params.transcript,
   }),
   dispatchWhatsAppBufferedReply: vi.fn(async () => true),
@@ -114,30 +114,43 @@ vi.mock("./inbound-dispatch.js", () => ({
   updateWhatsAppMainLastRoute: () => {},
 }));
 
+import { createTestWebInboundMessage } from "../../inbound/admission.test-support.js";
+import type { WebInboundMessage } from "../../inbound/types.js";
 import { dispatchWhatsAppBufferedReply } from "./inbound-dispatch.js";
 import { processMessage } from "./process-message.js";
 
-type WebInboundMsg = Parameters<typeof processMessage>[0]["msg"];
 type TestRoute = Parameters<typeof processMessage>[0]["route"];
+type Phase5AudioPreflightResult =
+  | { kind: "not_provided" }
+  | { kind: "not_audio" }
+  | { kind: "no_transcript" }
+  | { kind: "transcript"; transcript: string };
+
+type Phase5ProcessMessageParams = Parameters<typeof processMessage>[0] & {
+  audioPreflight: Phase5AudioPreflightResult;
+};
 
 const flushMicrotasks = async () => {
   await Promise.resolve();
   await Promise.resolve();
 };
 
-function makeAudioMsg(overrides: Partial<WebInboundMsg> = {}): WebInboundMsg {
-  return {
-    id: "msg-1",
-    from: "+15550000002",
-    to: "+15550000001",
-    body: "<media:audio>",
-    chatType: "direct",
-    mediaType: "audio/ogg; codecs=opus",
-    mediaPath: "/tmp/voice.ogg",
-    timestamp: 1700000000,
-    accountId: "default",
-    ...overrides,
-  } as WebInboundMsg;
+type AudioMessageOverrides = {
+  body?: string;
+  media?: WebInboundMessage["payload"]["media"];
+};
+
+function makeAudioMsg(overrides: AudioMessageOverrides = {}): WebInboundMessage {
+  return createTestWebInboundMessage({
+    event: { id: "msg-1" },
+    payload: {
+      body: overrides.body ?? "<media:audio>",
+      media: overrides.media ?? {
+        type: "audio/ogg; codecs=opus",
+        path: "/tmp/voice.ogg",
+      },
+    },
+  });
 }
 
 function makeRoute(overrides: Partial<TestRoute> = {}): TestRoute {
@@ -150,7 +163,7 @@ function makeRoute(overrides: Partial<TestRoute> = {}): TestRoute {
   } as TestRoute;
 }
 
-function makeParams(msgOverrides: Partial<WebInboundMsg> = {}) {
+function makeParams(msgOverrides: AudioMessageOverrides = {}) {
   return {
     cfg: {
       tools: { media: { audio: { enabled: true } } },
@@ -177,7 +190,9 @@ function makeParams(msgOverrides: Partial<WebInboundMsg> = {}) {
     echoHas: () => false,
     echoForget: () => {},
     buildCombinedEchoKey: (p: { combinedBody: string }) => p.combinedBody,
-  };
+    audioPreflight: { kind: "not_provided" },
+    routeLifecycle: { kind: "direct" },
+  } satisfies Phase5ProcessMessageParams;
 }
 
 function makeAckReactionHandle() {
@@ -188,7 +203,7 @@ function makeAckReactionHandle() {
   };
 }
 
-function makeRemoveAckAfterReplyParams() {
+function makeRemoveAckAfterReplyParams(): Phase5ProcessMessageParams {
   return {
     ...makeParams(),
     cfg: {
@@ -197,7 +212,10 @@ function makeRemoveAckAfterReplyParams() {
       commands: { useAccessGroups: false },
       messages: { removeAckAfterReply: true },
     } as never,
-    preflightAudioTranscript: "pre-computed transcript from caller",
+    audioPreflight: {
+      kind: "transcript",
+      transcript: "pre-computed transcript from caller",
+    },
   };
 }
 
@@ -263,7 +281,7 @@ describe("processMessage audio preflight transcription", () => {
       Transcript: "okay let's test this voice message",
       MediaTranscribedIndexes: [0],
     });
-    // mediaPath and mediaType must be preserved so inboundAudio detection (used by
+    // payload media path/type must be preserved so inboundAudio detection (used by
     // features like messages.tts.auto: "inbound") still recognises this as audio.
     expectContextFields(context, {
       MediaPath: "/tmp/voice.ogg",
@@ -299,28 +317,28 @@ describe("processMessage audio preflight transcription", () => {
 
   it("does not call transcribeFirstAudio when mediaType is not audio", async () => {
     await processMessage(
-      makeParams({ body: "<media:image>", mediaType: "image/jpeg", mediaPath: "/tmp/img.jpg" }),
+      makeParams({ body: "<media:image>", media: { type: "image/jpeg", path: "/tmp/img.jpg" } }),
     );
 
     expect(transcribeFirstAudioMock).not.toHaveBeenCalled();
   });
 
   it("does not call transcribeFirstAudio when body is not <media:audio>", async () => {
-    await processMessage(makeParams({ body: "hello there", mediaType: "audio/ogg; codecs=opus" }));
+    await processMessage(
+      makeParams({ body: "hello there", media: { type: "audio/ogg; codecs=opus" } }),
+    );
 
     expect(transcribeFirstAudioMock).not.toHaveBeenCalled();
   });
 
   it("does not call transcribeFirstAudio when mediaPath is absent", async () => {
-    await processMessage(makeParams({ mediaPath: undefined }));
+    await processMessage(makeParams({ media: { type: "audio/ogg; codecs=opus" } }));
 
     expect(transcribeFirstAudioMock).not.toHaveBeenCalled();
   });
 
-  it("does not call transcribeFirstAudio when msg.mediaType is absent", async () => {
-    await processMessage(
-      makeParams({ mediaType: undefined, body: "<media:audio>", mediaPath: "/tmp/voice.ogg" }),
-    );
+  it("does not call transcribeFirstAudio when payload media type is absent", async () => {
+    await processMessage(makeParams({ body: "<media:audio>", media: { path: "/tmp/voice.ogg" } }));
 
     expect(transcribeFirstAudioMock).not.toHaveBeenCalled();
 
@@ -347,12 +365,13 @@ describe("processMessage audio preflight transcription", () => {
     });
   });
 
-  it("uses preflightAudioTranscript when provided, skipping transcribeFirstAudio", async () => {
-    // Simulate broadcast fan-out: caller pre-computed the transcript and passes it in.
-    // transcribeFirstAudio must NOT be called again inside processMessage.
+  it("uses the lifecycle audio transcript result, skipping transcribeFirstAudio", async () => {
     await processMessage({
       ...makeParams(),
-      preflightAudioTranscript: "pre-computed transcript from fan-out caller",
+      audioPreflight: {
+        kind: "transcript",
+        transcript: "pre-computed transcript from fan-out caller",
+      },
     });
 
     expect(transcribeFirstAudioMock).not.toHaveBeenCalled();
@@ -370,7 +389,10 @@ describe("processMessage audio preflight transcription", () => {
   it("does not send a duplicate ack when caller already sent it", async () => {
     await processMessage({
       ...makeParams(),
-      preflightAudioTranscript: "pre-computed transcript from caller",
+      audioPreflight: {
+        kind: "transcript",
+        transcript: "pre-computed transcript from caller",
+      },
       ackAlreadySent: true,
       ackReaction: makeAckReactionHandle(),
     });
@@ -425,12 +447,10 @@ describe("processMessage audio preflight transcription", () => {
     expect(ackReaction.remove).not.toHaveBeenCalled();
   });
 
-  it("skips internal STT when preflightAudioTranscript is null (failed preflight sentinel)", async () => {
-    // null = caller already attempted preflight but got nothing (provider unavailable,
-    // disabled, etc.). processMessage must NOT retry to avoid 1+N attempts in broadcast.
+  it("skips internal STT when lifecycle audio preflight already produced no transcript", async () => {
     await processMessage({
       ...makeParams(),
-      preflightAudioTranscript: null,
+      audioPreflight: { kind: "no_transcript" },
     });
 
     expect(transcribeFirstAudioMock).not.toHaveBeenCalled();

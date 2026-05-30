@@ -1,29 +1,43 @@
-import type { AckReactionHandle } from "openclaw/plugin-sdk/channel-feedback";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { getReplyFromConfig } from "openclaw/plugin-sdk/reply-runtime";
 import type { MsgContext } from "openclaw/plugin-sdk/reply-runtime";
 import { resolveAgentRoute } from "openclaw/plugin-sdk/routing";
 import { buildGroupHistoryKey } from "openclaw/plugin-sdk/routing";
 import { logVerbose } from "openclaw/plugin-sdk/runtime-env";
-import { resolveWhatsAppAccount } from "../../accounts.js";
 import { resolveWhatsAppGroupSessionRoute } from "../../group-session-key.js";
-import { getPrimaryIdentityId, getSenderIdentity } from "../../identity.js";
-import { normalizeE164 } from "../../text-runtime.js";
+import { getSenderIdentity } from "../../identity.js";
+import type { WebInboundMessage } from "../../inbound/types.js";
 import { buildMentionConfig } from "../mentions.js";
 import type { MentionConfig } from "../mentions.js";
-import type { WebInboundMsg } from "../types.js";
-import { maybeSendAckReaction } from "./ack-reaction.js";
+import {
+  WHATSAPP_AUDIO_PREFLIGHT_NOT_AUDIO,
+  WHATSAPP_AUDIO_PREFLIGHT_NOT_PROVIDED,
+  type WhatsAppAudioPreflightResult,
+  resolveWhatsAppAudioPreflightTranscript,
+  resolveWhatsAppAudioPreflightInput,
+  transcribeWhatsAppAudioPreflight,
+} from "./audio-preflight.js";
 import { maybeBroadcastMessage } from "./broadcast.js";
 import type { EchoTracker } from "./echo.js";
-import type { GroupHistoryEntry } from "./group-gating.js";
 import { applyGroupGating } from "./group-gating.js";
+import type { GroupHistoryEntry } from "./group-history.js";
 import { updateLastRouteInBackground } from "./last-route.js";
 import { resolvePeerId } from "./peer.js";
+import {
+  WHATSAPP_DIRECT_ROUTE_LIFECYCLE,
+  WHATSAPP_NO_RECEIPT_FEEDBACK,
+  createWhatsAppBroadcastReceiptFeedbackHandoff,
+  createWhatsAppGroupRouteLifecycle,
+  createWhatsAppReceiptFeedbackHandoff,
+  type WhatsAppProcessMessageHandoff,
+  type WhatsAppReceiptFeedback,
+  type WhatsAppRouteLifecycleFacts,
+} from "./process-handoff.js";
 import { processMessage } from "./process-message.js";
 import {
-  createWhatsAppStatusReactionController,
-  type StatusReactionController,
-} from "./status-reaction.js";
+  finalizeWhatsAppStatusReaction,
+  startWhatsAppReceiptFeedback,
+} from "./receipt-feedback.js";
 
 export function createWebOnMessageHandler(params: {
   cfg: OpenClawConfig;
@@ -39,26 +53,19 @@ export function createWebOnMessageHandler(params: {
   replyResolver: typeof getReplyFromConfig;
   replyLogger: ReturnType<(typeof import("openclaw/plugin-sdk/runtime-env"))["getChildLogger"]>;
   baseMentionConfig: MentionConfig;
-  account: { authDir?: string; accountId?: string; selfChatMode?: boolean };
 }) {
   const processForRoute = async (
     cfg: OpenClawConfig,
-    msg: WebInboundMsg,
+    msg: WebInboundMessage,
     route: ReturnType<typeof resolveAgentRoute>,
     groupHistoryKey: string,
-    opts?: {
-      groupHistory?: GroupHistoryEntry[];
-      suppressGroupHistoryClear?: boolean;
-      preflightAudioTranscript?: string | null;
-      ackAlreadySent?: boolean;
-      ackReaction?: AckReactionHandle | null;
-      statusReactionController?: StatusReactionController | null;
-    },
+    opts: WhatsAppProcessMessageHandoff,
   ) => {
     const processParams: Parameters<typeof processMessage>[0] = {
       cfg,
       msg,
       route,
+      ...opts,
       groupHistoryKey,
       groupHistories: params.groupHistories,
       groupMemberNames: params.groupMemberNames,
@@ -73,44 +80,27 @@ export function createWebOnMessageHandler(params: {
       echoForget: params.echoTracker.forget,
       buildCombinedEchoKey: params.echoTracker.buildCombinedKey,
     };
-    if (opts?.groupHistory !== undefined) {
-      processParams.groupHistory = opts.groupHistory;
-    }
-    if (opts?.suppressGroupHistoryClear !== undefined) {
-      processParams.suppressGroupHistoryClear = opts.suppressGroupHistoryClear;
-    }
-    if (opts?.preflightAudioTranscript !== undefined) {
-      processParams.preflightAudioTranscript = opts.preflightAudioTranscript;
-    }
-    if (opts?.ackAlreadySent === true) {
-      processParams.ackAlreadySent = true;
-    }
-    if (opts?.ackReaction !== undefined) {
-      processParams.ackReaction = opts.ackReaction;
-    }
-    if (opts?.statusReactionController !== undefined) {
-      processParams.statusReactionController = opts.statusReactionController;
-    }
     return processMessage(processParams);
   };
 
-  return async (msg: WebInboundMsg) => {
+  return async (msg: WebInboundMessage) => {
     const cfg = params.loadConfig?.() ?? params.cfg;
-    const conversationId = msg.conversationId ?? msg.from;
+    const admittedAccountId = msg.admission.accountId;
+    const conversationId = msg.admission.conversation.id;
+    const chatType = msg.admission.conversation.kind;
     const peerId = resolvePeerId(msg);
     const baseRoute = resolveAgentRoute({
       cfg,
       channel: "whatsapp",
-      accountId: msg.accountId,
+      accountId: admittedAccountId,
       peer: {
-        kind: msg.chatType === "group" ? "group" : "direct",
+        kind: chatType === "group" ? "group" : "direct",
         id: peerId,
       },
     });
-    const route =
-      msg.chatType === "group" ? resolveWhatsAppGroupSessionRoute(baseRoute) : baseRoute;
+    const route = chatType === "group" ? resolveWhatsAppGroupSessionRoute(baseRoute) : baseRoute;
     const groupHistoryKey =
-      msg.chatType === "group"
+      chatType === "group"
         ? buildGroupHistoryKey({
             channel: "whatsapp",
             accountId: route.accountId,
@@ -118,15 +108,11 @@ export function createWebOnMessageHandler(params: {
             peerId,
           })
         : route.sessionKey;
-    const account = resolveWhatsAppAccount({
-      cfg,
-      accountId: route.accountId ?? msg.accountId ?? params.account.accountId,
-    });
     const baseMentionConfig = buildMentionConfig(cfg);
 
-    // Same-phone mode logging retained
-    if (msg.from === msg.platform.recipientJid) {
-      logVerbose(`📱 Same-phone mode detected (from === to: ${msg.from})`);
+    // Same-phone mode logging retained.
+    if (conversationId === msg.platform.recipientJid) {
+      logVerbose(`📱 Same-phone mode detected (from === to: ${conversationId})`);
     }
 
     // Skip if this is a message we just sent (echo detection)
@@ -141,90 +127,62 @@ export function createWebOnMessageHandler(params: {
     // For DMs, only do this on the real inbound path after access-control/pairing
     // checks have already passed in inbound/monitor.ts. For groups, the first
     // gating pass must approve the group/sender before STT is attempted.
-    // null = preflight was attempted but produced no transcript (failed / disabled / no audio);
-    // undefined = preflight was not attempted (non-audio message).
-    let preflightAudioTranscript: string | null | undefined;
-    const hasAudioBody =
-      msg.payload.media?.type?.startsWith("audio/") === true &&
-      msg.payload.body === "<media:audio>";
-    const canRunEarlyAudioPreflight = msg.chatType === "group" || msg.accessControlPassed === true;
-    let ackAlreadySent = false;
-    let ackReaction: AckReactionHandle | null = null;
-    let statusReactionController: StatusReactionController | null = null;
+    const audioPreflightInput = resolveWhatsAppAudioPreflightInput({
+      msg,
+    });
+    let audioPreflight: WhatsAppAudioPreflightResult =
+      audioPreflightInput.kind === "available"
+        ? WHATSAPP_AUDIO_PREFLIGHT_NOT_PROVIDED
+        : WHATSAPP_AUDIO_PREFLIGHT_NOT_AUDIO;
+    let routeLifecycle: WhatsAppRouteLifecycleFacts = WHATSAPP_DIRECT_ROUTE_LIFECYCLE;
+    let receiptFeedback: WhatsAppReceiptFeedback = WHATSAPP_NO_RECEIPT_FEEDBACK;
     const runAudioPreflightOnce = async () => {
-      if (
-        preflightAudioTranscript !== undefined ||
-        !canRunEarlyAudioPreflight ||
-        !hasAudioBody ||
-        !msg.payload.media?.path
-      ) {
+      if (audioPreflight.kind !== "not_provided" || audioPreflightInput.kind !== "available") {
         return;
       }
-      if (cfg.messages?.statusReactions?.enabled === true) {
-        statusReactionController = await createWhatsAppStatusReactionController({
-          cfg,
-          msg,
-          agentId: route.agentId,
-          sessionKey: route.sessionKey,
-          conversationId,
-          verbose: params.verbose,
-          accountId: route.accountId,
-        });
-        if (statusReactionController) {
-          await statusReactionController.setQueued();
-        }
-      } else {
-        ackReaction = await maybeSendAckReaction({
-          cfg,
-          msg,
-          agentId: route.agentId,
-          sessionKey: route.sessionKey,
-          conversationId,
-          verbose: params.verbose,
-          accountId: route.accountId,
-          info: params.replyLogger.info.bind(params.replyLogger),
-          warn: params.replyLogger.warn.bind(params.replyLogger),
-        });
-        ackAlreadySent = ackReaction !== null;
+      receiptFeedback = await startWhatsAppReceiptFeedback({
+        cfg,
+        msg,
+        agentId: route.agentId,
+        verbose: params.verbose,
+        routeLifecycle,
+        queueStatusReaction: "await",
+        info: params.replyLogger.info.bind(params.replyLogger),
+        warn: params.replyLogger.warn.bind(params.replyLogger),
+      });
+      audioPreflight = await transcribeWhatsAppAudioPreflight({
+        input: audioPreflightInput.input,
+        cfg,
+      });
+    };
+    const finalizeDroppedReceiptFeedback = async () => {
+      if (receiptFeedback.kind !== "status") {
+        return;
       }
-      try {
-        const { transcribeFirstAudio } = await import("./audio-preflight.runtime.js");
-        // transcribeFirstAudio returns undefined on failure/disabled; store null so
-        // processMessage knows the attempt was already made and does not retry.
-        preflightAudioTranscript =
-          (await transcribeFirstAudio({
-            ctx: {
-              MediaPaths: [msg.payload.media?.path],
-              MediaTypes: msg.payload.media?.type ? [msg.payload.media?.type] : undefined,
-              From: msg.from,
-              To: msg.platform.recipientJid,
-              Provider: "whatsapp",
-              Surface: "whatsapp",
-              OriginatingChannel: "whatsapp",
-              OriginatingTo: conversationId,
-              AccountId: route.accountId,
-            },
-            cfg,
-          })) ?? null;
-      } catch {
-        // Non-fatal: store null so per-agent retries are suppressed.
-        preflightAudioTranscript = null;
-      }
+      await finalizeWhatsAppStatusReaction({
+        cfg,
+        controller: receiptFeedback.statusReactionController,
+        outcome: "error",
+        hasFinalResponse: false,
+      });
+      receiptFeedback = WHATSAPP_NO_RECEIPT_FEEDBACK;
     };
 
-    if (msg.chatType === "group") {
+    if (chatType === "group") {
+      const groupMsg = msg;
       const sender = getSenderIdentity(msg);
+      const senderE164 = sender.e164 ?? undefined;
       const metaCtx = {
-        From: msg.from,
+        From: conversationId,
         To: msg.platform.recipientJid,
         SessionKey: route.sessionKey,
-        AccountId: route.accountId,
-        ChatType: msg.chatType,
+        AccountId: admittedAccountId,
+        ChatType: chatType,
         ConversationLabel: conversationId,
         GroupSubject: msg.group?.subject,
         SenderName: sender.name ?? undefined,
-        SenderId: getPrimaryIdentityId(sender) ?? undefined,
-        SenderE164: sender.e164 ?? undefined,
+        SenderId: msg.admission.sender.id,
+        SenderE164: senderE164,
         Provider: "whatsapp",
         Surface: "whatsapp",
         OriginatingChannel: "whatsapp",
@@ -244,40 +202,34 @@ export function createWebOnMessageHandler(params: {
 
       let gating = await applyGroupGating({
         cfg,
-        msg,
-        deferMissingMention: hasAudioBody && Boolean(msg.payload.media?.path),
-        conversationId,
+        msg: groupMsg,
+        deferMissingMention: audioPreflightInput.kind === "available",
         groupHistoryKey,
         agentId: route.agentId,
         sessionKey: route.sessionKey,
         baseMentionConfig,
-        authDir: account.authDir,
-        selfChatMode: account.selfChatMode,
+        authDir: msg.admission.account.authDir,
+        selfChatMode: msg.admission.account.selfChatMode,
         groupHistories: params.groupHistories,
         groupHistoryLimit: params.groupHistoryLimit,
         groupMemberNames: params.groupMemberNames,
         logVerbose,
         replyLogger: params.replyLogger,
       });
-      if (
-        !gating.shouldProcess &&
-        "needsMentionText" in gating &&
-        gating.needsMentionText === true
-      ) {
+      if (!gating.shouldProcess && gating.mention.needsMentionText === true) {
+        routeLifecycle = createWhatsAppGroupRouteLifecycle(gating);
         await runAudioPreflightOnce();
+        const audioTranscript = resolveWhatsAppAudioPreflightTranscript(audioPreflight);
         gating = await applyGroupGating({
           cfg,
-          msg,
-          ...(typeof preflightAudioTranscript === "string"
-            ? { mentionText: preflightAudioTranscript }
-            : {}),
-          conversationId,
+          msg: groupMsg,
+          ...(audioTranscript !== undefined ? { mentionText: audioTranscript } : {}),
           groupHistoryKey,
           agentId: route.agentId,
           sessionKey: route.sessionKey,
           baseMentionConfig,
-          authDir: account.authDir,
-          selfChatMode: account.selfChatMode,
+          authDir: msg.admission.account.authDir,
+          selfChatMode: msg.admission.account.selfChatMode,
           groupHistories: params.groupHistories,
           groupHistoryLimit: params.groupHistoryLimit,
           groupMemberNames: params.groupMemberNames,
@@ -286,22 +238,10 @@ export function createWebOnMessageHandler(params: {
         });
       }
       if (!gating.shouldProcess) {
+        await finalizeDroppedReceiptFeedback();
         return;
       }
-    } else {
-      // Ensure `peerId` for DMs is stable and stored as E.164 when possible.
-      if (
-        !msg.platform.sender?.e164 &&
-        !msg.platform.senderE164 &&
-        peerId &&
-        peerId.startsWith("+")
-      ) {
-        const normalized = normalizeE164(peerId);
-        if (normalized) {
-          msg.platform.sender = { ...msg.platform.sender, e164: normalized };
-          msg.platform.senderE164 = normalized;
-        }
-      }
+      routeLifecycle = createWhatsAppGroupRouteLifecycle(gating);
     }
 
     await runAudioPreflightOnce();
@@ -316,13 +256,12 @@ export function createWebOnMessageHandler(params: {
         route,
         groupHistoryKey,
         groupHistories: params.groupHistories,
-        ...(preflightAudioTranscript !== undefined ? { preflightAudioTranscript } : {}),
-        // Group ack eligibility depends on the target agent/session, so a
-        // preflight ack attempt on the base route must not suppress downstream
-        // per-agent checks during broadcast fan-out.
-        ...(ackAlreadySent && msg.chatType !== "group" ? { ackAlreadySent: true } : {}),
-        ...(ackReaction && msg.chatType !== "group" ? { ackReaction } : {}),
-        ...(statusReactionController && msg.chatType !== "group" ? { ackAlreadySent: true } : {}),
+        audioPreflight,
+        routeLifecycle,
+        ...createWhatsAppBroadcastReceiptFeedbackHandoff({
+          feedback: receiptFeedback,
+          chatType,
+        }),
         processMessage: (m, r, k, opts) => processForRoute(cfg, m, r, k, opts),
       })
     ) {
@@ -330,10 +269,9 @@ export function createWebOnMessageHandler(params: {
     }
 
     await processForRoute(cfg, msg, route, groupHistoryKey, {
-      ...(preflightAudioTranscript !== undefined ? { preflightAudioTranscript } : {}),
-      ...(ackAlreadySent ? { ackAlreadySent: true } : {}),
-      ...(ackReaction ? { ackReaction } : {}),
-      ...(statusReactionController ? { statusReactionController } : {}),
+      audioPreflight,
+      routeLifecycle,
+      ...createWhatsAppReceiptFeedbackHandoff(receiptFeedback),
     });
   };
 }

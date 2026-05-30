@@ -45,6 +45,7 @@ const resolveWorkGroupActivation = (storePath: string) =>
     agentId: "main",
     sessionKey: WORK_GROUP_SESSION_KEY,
     conversationId: GROUP_CONVERSATION_ID,
+    requireMentionDefault: true,
   });
 
 const expectWorkGroupActivationEntry = async (
@@ -138,6 +139,7 @@ describe("resolveGroupActivationFor", () => {
       agentId: "main",
       sessionKey: WORK_GROUP_SESSION_KEY,
       conversationId: GROUP_CONVERSATION_ID,
+      requireMentionDefault: true,
     });
 
     expect(workActivation).toBe("always");
@@ -148,6 +150,7 @@ describe("resolveGroupActivationFor", () => {
       agentId: "main",
       sessionKey: LEGACY_GROUP_SESSION_KEY,
       conversationId: GROUP_CONVERSATION_ID,
+      requireMentionDefault: true,
     });
 
     expect(defaultActivation).toBe("mention");
@@ -182,6 +185,7 @@ describe("resolveGroupActivationFor", () => {
       agentId: "main",
       sessionKey: LEGACY_GROUP_SESSION_KEY,
       conversationId: GROUP_CONVERSATION_ID,
+      requireMentionDefault: true,
     });
 
     expect(activation).toBe("always");

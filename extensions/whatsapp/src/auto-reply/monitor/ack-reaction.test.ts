@@ -1,8 +1,10 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { WhatsAppSendResult } from "../../inbound/send-result.js";
+import { createTestWebInboundMessage } from "../../inbound/admission.test-support.js";
 import type { WebInboundMessage } from "../../inbound/types.js";
 import { maybeSendAckReaction } from "./ack-reaction.js";
+import type { WhatsAppRouteLifecycleFacts } from "./process-handoff.js";
+import type { WhatsAppGroupProcessingFacts } from "./processing-facts.js";
 
 const hoisted = vi.hoisted(() => ({
   sendReactionWhatsApp: vi.fn(async () => undefined),
@@ -12,30 +14,25 @@ vi.mock("../../send.js", () => ({
   sendReactionWhatsApp: hoisted.sendReactionWhatsApp,
 }));
 
-function acceptedSendResult(kind: "media" | "text", id: string): WhatsAppSendResult {
-  return {
-    kind,
-    messageId: id,
-    keys: [{ id }],
-    providerAccepted: true,
-  };
-}
-
-function createMessage(overrides: Partial<WebInboundMessage> = {}): WebInboundMessage {
-  return {
-    id: "msg-1",
-    from: "15551234567",
-    conversationId: "15551234567",
-    to: "15559876543",
-    accountId: "default",
-    body: "hello",
-    chatType: "direct",
-    chatId: "15551234567@s.whatsapp.net",
-    sendComposing: async () => {},
-    reply: async () => acceptedSendResult("text", "r1"),
-    sendMedia: async () => acceptedSendResult("media", "m1"),
-    ...overrides,
-  };
+function createMessage(
+  params: { accountId?: string; chatType?: "direct" | "group" } = {},
+): WebInboundMessage {
+  const accountId = params.accountId ?? "default";
+  const chatType = params.chatType ?? "direct";
+  return createTestWebInboundMessage({
+    admissionOverrides: {
+      accountId,
+      chatType,
+      conversationId: chatType === "group" ? "1203630@g.us" : "15551234567@s.whatsapp.net",
+      requireMention: true,
+    },
+    event: {
+      id: "msg-1",
+    },
+    platform: {
+      chatJid: "mutable-chat@s.whatsapp.net",
+    },
+  });
 }
 
 function createConfig(
@@ -59,23 +56,32 @@ function createConfig(
 
 type AckReactionParams = Parameters<typeof maybeSendAckReaction>[0];
 
-const runAckReaction = (overrides: Partial<AckReactionParams> = {}) =>
-  maybeSendAckReaction({
+const directRouteLifecycle: WhatsAppRouteLifecycleFacts = { kind: "direct" };
+
+function groupRouteLifecycle(processingFacts: WhatsAppGroupProcessingFacts) {
+  return {
+    kind: "group",
+    processingFacts,
+  } satisfies WhatsAppRouteLifecycleFacts;
+}
+
+const runAckReaction = (overrides: Partial<AckReactionParams> = {}) => {
+  const params = {
     cfg: createConfig("ack"),
     msg: createMessage(),
     agentId: "agent",
-    sessionKey: "whatsapp:default:15551234567",
-    conversationId: "15551234567",
     verbose: false,
-    accountId: "default",
+    routeLifecycle: directRouteLifecycle,
     info: vi.fn(),
     warn: vi.fn(),
     ...overrides,
-  });
+  } satisfies AckReactionParams;
+  return maybeSendAckReaction(params);
+};
 
 const expectAckReactionSent = (accountId: string, cfg: OpenClawConfig = createConfig("ack")) => {
   expect(hoisted.sendReactionWhatsApp).toHaveBeenCalledWith(
-    "15551234567@s.whatsapp.net",
+    "mutable-chat@s.whatsapp.net",
     "msg-1",
     "👀",
     {
@@ -115,7 +121,7 @@ describe("maybeSendAckReaction", () => {
     expect(hoisted.sendReactionWhatsApp).not.toHaveBeenCalled();
   });
 
-  it("uses the active account reactionLevel override for ack gating", async () => {
+  it("uses the admitted account reactionLevel override for ack gating", async () => {
     const cfg = createConfig("off", {
       accounts: {
         work: {
@@ -125,11 +131,7 @@ describe("maybeSendAckReaction", () => {
     });
     const ackReaction = await runAckReaction({
       cfg,
-      msg: createMessage({
-        accountId: "work",
-      }),
-      sessionKey: "whatsapp:work:15551234567",
-      accountId: "work",
+      msg: createMessage({ accountId: "work" }),
     });
 
     expect(ackReaction?.ackReactionValue).toBe("👀");
@@ -157,7 +159,7 @@ describe("maybeSendAckReaction", () => {
     expect(ackReaction?.ackReactionValue).toBe("🔥");
     await expect(ackReaction?.ackReactionPromise).resolves.toBe(true);
     expect(hoisted.sendReactionWhatsApp).toHaveBeenCalledWith(
-      "15551234567@s.whatsapp.net",
+      "mutable-chat@s.whatsapp.net",
       "msg-1",
       "🔥",
       {
@@ -176,7 +178,7 @@ describe("maybeSendAckReaction", () => {
     await ackReaction?.remove();
 
     expect(hoisted.sendReactionWhatsApp).toHaveBeenLastCalledWith(
-      "15551234567@s.whatsapp.net",
+      "mutable-chat@s.whatsapp.net",
       "msg-1",
       "",
       {
@@ -199,10 +201,79 @@ describe("maybeSendAckReaction", () => {
     expect(warn).toHaveBeenCalledWith(
       {
         error: "session down",
-        chatId: "15551234567@s.whatsapp.net",
+        chatId: "mutable-chat@s.whatsapp.net",
         messageId: "msg-1",
       },
       "failed to send ack reaction",
     );
+  });
+
+  it("sends group mention-mode reactions from explicit mention facts", async () => {
+    const cfg = createConfig("ack");
+    const ackReaction = await runAckReaction({
+      cfg,
+      msg: createMessage({ chatType: "group" }),
+      routeLifecycle: groupRouteLifecycle({
+        mention: {
+          effectiveWasMentioned: true,
+          shouldBypassMention: false,
+        },
+        activation: {
+          kind: "known",
+          active: false,
+          defaultRequiresMention: true,
+        },
+      }),
+    });
+
+    expect(ackReaction?.ackReactionValue).toBe("👀");
+    await expect(ackReaction?.ackReactionPromise).resolves.toBe(true);
+    expectAckReactionSent("default", cfg);
+  });
+
+  it("uses provided activation facts from the route lifecycle", async () => {
+    const cfg = createConfig("ack");
+    const ackReaction = await runAckReaction({
+      cfg,
+      msg: createMessage({ chatType: "group" }),
+      routeLifecycle: groupRouteLifecycle({
+        mention: {
+          effectiveWasMentioned: false,
+          shouldBypassMention: false,
+        },
+        activation: {
+          kind: "known",
+          active: true,
+          defaultRequiresMention: true,
+        },
+      }),
+    });
+
+    expect(ackReaction?.ackReactionValue).toBe("👀");
+    await expect(ackReaction?.ackReactionPromise).resolves.toBe(true);
+    expectAckReactionSent("default", cfg);
+  });
+
+  it("does not infer group activation when lifecycle marks target activation absent", async () => {
+    const cfg = createConfig("ack");
+
+    const ackReaction = await runAckReaction({
+      cfg,
+      msg: createMessage({ chatType: "group" }),
+      agentId: "backup",
+      routeLifecycle: groupRouteLifecycle({
+        mention: {
+          effectiveWasMentioned: false,
+          shouldBypassMention: false,
+        },
+        activation: {
+          kind: "absent",
+          reason: "broadcast_target",
+        },
+      }),
+    });
+
+    expect(ackReaction).toBeNull();
+    expect(hoisted.sendReactionWhatsApp).not.toHaveBeenCalled();
   });
 });

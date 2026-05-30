@@ -7,36 +7,34 @@ import {
   getSenderIdentity,
   identitiesOverlap,
 } from "../../identity.js";
-import { resolveWhatsAppInboundPolicy } from "../../inbound-policy.js";
+import type { WebInboundMessage } from "../../inbound/types.js";
 import type { MentionConfig } from "../mentions.js";
 import { buildMentionConfig, debugMention, resolveOwnerList } from "../mentions.js";
-import type { WebInboundMsg } from "../types.js";
 import { stripMentionsForCommand } from "./commands.js";
-import { resolveGroupActivationFor } from "./group-activation.js";
+import { resolveAcceptedGroupActivationFor } from "./group-activation.js";
 import {
   hasControlCommand,
   implicitMentionKindWhen,
-  normalizeE164,
   parseActivationCommand,
   createChannelHistoryWindow,
   resolveInboundMentionDecision,
 } from "./group-gating.runtime.js";
+import type { GroupHistoryEntry } from "./group-history.js";
 import { noteGroupMember } from "./group-members.js";
+import type {
+  WhatsAppGroupActivationFacts,
+  WhatsAppGroupGatingResult,
+  WhatsAppGroupMentionFacts,
+  WhatsAppGroupProcessingFacts,
+} from "./processing-facts.js";
 
-export type GroupHistoryEntry = {
-  sender: string;
-  body: string;
-  timestamp?: number;
-  id?: string;
-  senderJid?: string;
-};
+export type { GroupHistoryEntry } from "./group-history.js";
 
 type ApplyGroupGatingParams = {
   cfg: OpenClawConfig;
-  msg: WebInboundMsg;
+  msg: WebInboundMessage;
   mentionText?: string;
   deferMissingMention?: boolean;
-  conversationId: string;
   groupHistoryKey: string;
   agentId: string;
   sessionKey: string;
@@ -75,8 +73,8 @@ function shouldWarnForGroupDrop(warnKey: string): boolean {
   return true;
 }
 
-function isOwnerSender(baseMentionConfig: MentionConfig, msg: WebInboundMsg) {
-  const sender = normalizeE164(getSenderIdentity(msg).e164 ?? "");
+function isOwnerSender(baseMentionConfig: MentionConfig, msg: WebInboundMessage) {
+  const sender = getSenderIdentity(msg).e164;
   if (!sender) {
     return false;
   }
@@ -85,18 +83,19 @@ function isOwnerSender(baseMentionConfig: MentionConfig, msg: WebInboundMsg) {
 }
 
 function recordPendingGroupHistoryEntry(params: {
-  msg: WebInboundMsg;
+  msg: WebInboundMessage;
   body?: string;
   groupHistories: Map<string, GroupHistoryEntry[]>;
   groupHistoryKey: string;
   groupHistoryLimit: number;
 }) {
   const senderIdentity = getSenderIdentity(params.msg);
+  const admittedSenderId = senderIdentity.e164 ?? undefined;
   const sender =
-    senderIdentity.name && senderIdentity.e164
-      ? `${senderIdentity.name} (${senderIdentity.e164})`
+    senderIdentity.name && admittedSenderId
+      ? `${senderIdentity.name} (${admittedSenderId})`
       : (senderIdentity.name ??
-        senderIdentity.e164 ??
+        admittedSenderId ??
         getPrimaryIdentityId(senderIdentity) ??
         "Unknown");
   createChannelHistoryWindow({ historyMap: params.groupHistories }).record({
@@ -115,8 +114,9 @@ function recordPendingGroupHistoryEntry(params: {
 function skipGroupMessageAndStoreHistory(
   params: ApplyGroupGatingParams,
   verboseMessage: string,
+  processingFacts: WhatsAppGroupProcessingFacts,
   body?: string,
-) {
+): WhatsAppGroupGatingResult {
   params.logVerbose(verboseMessage);
   recordPendingGroupHistoryEntry({
     msg: params.msg,
@@ -125,34 +125,55 @@ function skipGroupMessageAndStoreHistory(
     groupHistoryKey: params.groupHistoryKey,
     groupHistoryLimit: params.groupHistoryLimit,
   });
-  return { shouldProcess: false } as const;
+  return { shouldProcess: false, ...processingFacts };
 }
 
-export async function applyGroupGating(params: ApplyGroupGatingParams) {
+const unmentionedFacts = (): WhatsAppGroupProcessingFacts => ({
+  mention: {
+    effectiveWasMentioned: false,
+    shouldBypassMention: false,
+  },
+  activation: {
+    kind: "absent",
+    reason: "not_reached",
+  },
+});
+
+function activationFactsFor(
+  msg: WebInboundMessage,
+  activation: Awaited<ReturnType<typeof resolveAcceptedGroupActivationFor>>,
+): WhatsAppGroupActivationFacts {
+  return {
+    kind: "known",
+    active: activation === "always",
+    defaultRequiresMention: msg.admission.conversation.requireMention,
+  };
+}
+
+export async function applyGroupGating(
+  params: ApplyGroupGatingParams,
+): Promise<WhatsAppGroupGatingResult> {
   const sender = getSenderIdentity(params.msg);
   const self = getSelfIdentity(params.msg, params.authDir);
-  const inboundPolicy = resolveWhatsAppInboundPolicy({
-    cfg: params.cfg,
-    accountId: params.msg.accountId,
-    selfE164: self.e164 ?? null,
-  });
-  const conversationGroupPolicy = inboundPolicy.resolveConversationGroupPolicy(
-    params.conversationId,
-  );
-  if (conversationGroupPolicy.allowlistEnabled && !conversationGroupPolicy.allowed) {
-    const accountId = inboundPolicy.account.accountId;
-    const warnKey = `${accountId}:${params.conversationId}`;
+  const admission = params.msg.admission;
+  const conversationId = admission.conversation.id;
+  const admittedSender = sender;
+  const resolvedPolicy = admission.resolvedPolicy;
+  const groupAllowlist = resolvedPolicy.groupAllowlist;
+  if (groupAllowlist.allowlistEnabled && !groupAllowlist.allowed) {
+    const accountId = admission.accountId;
+    const warnKey = `${accountId}:${conversationId}`;
     if (shouldWarnForGroupDrop(warnKey)) {
       const groupsPath = resolveWhatsAppGroupsConfigPath({ cfg: params.cfg, accountId });
       params.replyLogger.warn(
-        { conversationId: params.conversationId, accountId, groupsPath },
-        `WhatsApp group ${params.conversationId} not in ${groupsPath} — inbound dropped. Add the group JID to ${groupsPath} (or add "*" there to admit all groups). Sender authorization still applies.`,
+        { conversationId, accountId, groupsPath },
+        `WhatsApp group ${conversationId} not in ${groupsPath} — inbound dropped. Add the group JID to ${groupsPath} (or add "*" there to admit all groups). Sender authorization still applies.`,
       );
     }
     params.logVerbose(
-      `Dropping message from unregistered WhatsApp group ${params.conversationId}. Add the group JID to channels.whatsapp.groups, or add "*" there to admit all groups. Sender authorization still applies.`,
+      `Dropping message from unregistered WhatsApp group ${conversationId}. Add the group JID to channels.whatsapp.groups, or add "*" there to admit all groups. Sender authorization still applies.`,
     );
-    return { shouldProcess: false };
+    return { shouldProcess: false, ...unmentionedFacts() };
   }
 
   noteGroupMember(
@@ -164,11 +185,11 @@ export async function applyGroupGating(params: ApplyGroupGatingParams) {
 
   const baseMentionConfig = {
     ...params.baseMentionConfig,
-    allowFrom: inboundPolicy.configuredAllowFrom,
+    allowFrom: resolvedPolicy.configuredAllowFrom,
   };
   const mentionConfig = {
     ...buildMentionConfig(params.cfg, params.agentId),
-    allowFrom: inboundPolicy.configuredAllowFrom,
+    allowFrom: resolvedPolicy.configuredAllowFrom,
   };
   const mentionMsg =
     params.mentionText !== undefined
@@ -181,32 +202,34 @@ export async function applyGroupGating(params: ApplyGroupGatingParams) {
   );
   const activationCommand = parseActivationCommand(commandBody);
   const owner = isOwnerSender(baseMentionConfig, params.msg);
-  const shouldBypassMention = owner && hasControlCommand(commandBody, params.cfg);
+  const hasControlCommandBody = hasControlCommand(commandBody, params.cfg);
+  const shouldBypassMention = owner && hasControlCommandBody;
 
   if (activationCommand.hasCommand && !owner) {
     return skipGroupMessageAndStoreHistory(
       params,
-      `Ignoring /activation from non-owner in group ${params.conversationId}`,
+      `Ignoring /activation from non-owner in group ${conversationId}`,
+      unmentionedFacts(),
     );
   }
 
   const mentionDebug = debugMention(mentionMsg, mentionConfig, params.authDir);
   params.replyLogger.debug(
     {
-      conversationId: params.conversationId,
+      conversationId,
       wasMentioned: mentionDebug.wasMentioned,
       ...mentionDebug.details,
     },
     "group mention debug",
   );
   const wasMentioned = mentionDebug.wasMentioned;
-  const activation = await resolveGroupActivationFor({
+  const activation = await resolveAcceptedGroupActivationFor({
     cfg: params.cfg,
-    accountId: inboundPolicy.account.accountId,
+    msg: params.msg,
     agentId: params.agentId,
     sessionKey: params.sessionKey,
-    conversationId: params.conversationId,
   });
+  const activationFacts = activationFactsFor(params.msg, activation);
   const requireMention = activation !== "always";
   const replyContext = getReplyContext(params.msg, params.authDir);
   const sharedNumberSelfChat = params.selfChatMode === true;
@@ -216,7 +239,7 @@ export async function applyGroupGating(params: ApplyGroupGatingParams) {
   // But in shared-number/selfChatMode setups, replies from the same self number
   // should not count as implicit bot mentions unless the message explicitly
   // mentioned the bot in text.
-  const implicitReplyToSelf = sharedNumberSelfChat && identitiesOverlap(self, sender);
+  const implicitReplyToSelf = sharedNumberSelfChat && identitiesOverlap(self, admittedSender);
   const implicitMentionKinds = implicitMentionKindWhen(
     "quoted_bot",
     !implicitReplyToSelf && identitiesOverlap(self, replyContext?.sender),
@@ -236,20 +259,38 @@ export async function applyGroupGating(params: ApplyGroupGatingParams) {
     },
   });
   const effectiveWasMentioned = mentionDecision.effectiveWasMentioned || shouldBypassMention;
-  params.msg.wasMentioned = effectiveWasMentioned;
+  const mentionFacts: WhatsAppGroupMentionFacts = {
+    effectiveWasMentioned,
+    shouldBypassMention,
+  };
   if (!shouldBypassMention && requireMention && mentionDecision.shouldSkip) {
     if (params.deferMissingMention === true) {
       params.logVerbose(
-        `Deferring group mention skip until audio preflight completes in ${params.conversationId}`,
+        `Deferring group mention skip until audio preflight completes in ${conversationId}`,
       );
-      return { shouldProcess: false, needsMentionText: true } as const;
+      return {
+        shouldProcess: false,
+        mention: {
+          ...mentionFacts,
+          needsMentionText: true,
+        },
+        activation: activationFacts,
+      };
     }
     return skipGroupMessageAndStoreHistory(
       params,
-      `Group message stored for context (no mention detected) in ${params.conversationId}: ${mentionMsg.payload.body}`,
+      `Group message stored for context (no mention detected) in ${conversationId}: ${mentionMsg.payload.body}`,
+      {
+        mention: mentionFacts,
+        activation: activationFacts,
+      },
       params.mentionText,
     );
   }
 
-  return { shouldProcess: true };
+  return {
+    shouldProcess: true,
+    mention: mentionFacts,
+    activation: activationFacts,
+  };
 }

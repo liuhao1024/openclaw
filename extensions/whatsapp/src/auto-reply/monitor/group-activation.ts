@@ -2,7 +2,7 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclaw/plugin-sdk/routing";
 import { updateSessionStore } from "openclaw/plugin-sdk/session-store-runtime";
 import { resolveWhatsAppLegacyGroupSessionKey } from "../../group-session-key.js";
-import { resolveWhatsAppInboundPolicy } from "../../inbound-policy.js";
+import type { WebInboundMessage } from "../../inbound/types.js";
 import { loadSessionStore, resolveStorePath } from "../config.runtime.js";
 import { normalizeGroupActivation } from "./group-activation.runtime.js";
 
@@ -33,6 +33,7 @@ export async function resolveGroupActivationFor(params: {
   agentId: string;
   sessionKey: string;
   conversationId: string;
+  requireMentionDefault: boolean;
 }) {
   const storePath = resolveStorePath(params.cfg.session?.store, {
     agentId: params.agentId,
@@ -64,10 +65,23 @@ export async function resolveGroupActivationFor(params: {
       };
     });
   }
-  const requireMention = resolveWhatsAppInboundPolicy({
-    cfg: params.cfg,
-    accountId: params.accountId,
-  }).resolveConversationRequireMention(params.conversationId);
-  const defaultActivation = !requireMention ? "always" : "mention";
+  const defaultActivation = !params.requireMentionDefault ? "always" : "mention";
   return normalizeGroupActivation(activation) ?? defaultActivation;
+}
+
+export async function resolveAcceptedGroupActivationFor(params: {
+  cfg: OpenClawConfig;
+  msg: WebInboundMessage;
+  agentId: string;
+  sessionKey: string;
+}) {
+  const admission = params.msg.admission;
+  return resolveGroupActivationFor({
+    cfg: params.cfg,
+    accountId: admission.accountId,
+    agentId: params.agentId,
+    sessionKey: params.sessionKey,
+    conversationId: admission.conversation.id,
+    requireMentionDefault: admission.conversation.requireMention,
+  });
 }

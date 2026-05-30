@@ -5,7 +5,7 @@ import {
   sendWebDirectInboundMessage,
 } from "./auto-reply.test-harness.js";
 import { monitorWebChannel } from "./auto-reply/monitor.js";
-import type { WebInboundMessage } from "./inbound.js";
+import type { WebInboundMessage } from "./inbound/types.js";
 
 export async function monitorWebChannelWithCapture(resolver: unknown): Promise<{
   spies: ReturnType<typeof createWebInboundDeliverySpies>;

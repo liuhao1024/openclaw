@@ -326,7 +326,6 @@ export async function monitorWebChannel(
               replyResolver: activeReplyResolver,
               replyLogger,
               baseMentionConfig,
-              account,
             });
 
             return (await (listenerFactory ?? attachWebInboxToSocket)({

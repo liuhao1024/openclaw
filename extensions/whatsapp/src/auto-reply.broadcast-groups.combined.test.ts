@@ -13,6 +13,7 @@ import {
   sendWebGroupInboundMessage,
   setLoadConfigMock,
 } from "./auto-reply.test-harness.js";
+import { createTestWebInboundMessage } from "./inbound/admission.test-support.js";
 
 installWebAutoReplyTestHomeHooks();
 
@@ -225,20 +226,29 @@ describe("broadcast groups", () => {
 
     const { onMessage: capturedOnMessage } = await monitorWebChannelWithCapture(resolver);
 
-    await capturedOnMessage({
-      id: "m1",
-      from: "+1000",
-      conversationId: "+1000",
-      to: "+2000",
-      accountId: "default",
-      body: "hello",
-      timestamp: Date.now(),
-      chatType: "direct",
-      chatId: "direct:+1000",
-      sendComposing,
-      reply,
-      sendMedia,
-    });
+    await capturedOnMessage(
+      createTestWebInboundMessage({
+        admissionOverrides: {
+          accountId: "default",
+          chatType: "direct",
+          conversationId: "+1000",
+        },
+        event: {
+          id: "m1",
+          timestamp: Date.now(),
+        },
+        payload: {
+          body: "hello",
+        },
+        platform: {
+          recipientJid: "+2000",
+          chatJid: "direct:+1000",
+          sendComposing,
+          reply,
+          sendMedia,
+        },
+      }),
+    );
 
     expect(resolver).toHaveBeenCalledTimes(2);
     resetLoadConfigMock();
