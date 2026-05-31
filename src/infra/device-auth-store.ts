@@ -3,6 +3,7 @@ import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
 import {
   clearDeviceAuthTokenFromStore,
+  copyCanonicalDeviceAuthTokens,
   type DeviceAuthEntry,
   loadDeviceAuthTokenFromStore,
   storeDeviceAuthTokenInStore,
@@ -29,7 +30,7 @@ function parseDeviceAuthStore(value: unknown): DeviceAuthStore | null {
   return {
     version: 1,
     deviceId: value.deviceId,
-    tokens: value.tokens,
+    tokens: copyCanonicalDeviceAuthTokens(value.tokens),
   };
 }
 

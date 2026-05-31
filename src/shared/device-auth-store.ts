@@ -28,7 +28,7 @@ function coerceDeviceAuthEntry(role: string, value: unknown): DeviceAuthEntry | 
   };
 }
 
-function copyCanonicalDeviceAuthTokens(
+export function copyCanonicalDeviceAuthTokens(
   tokens: Record<string, unknown>,
 ): Record<string, DeviceAuthEntry> {
   const out: Record<string, DeviceAuthEntry> = {};
