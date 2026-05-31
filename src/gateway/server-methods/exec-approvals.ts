@@ -25,14 +25,6 @@ import {
 import type { GatewayRequestContext, GatewayRequestHandlers, RespondFn } from "./types.js";
 import { assertValidParams } from "./validation.js";
 
-type NativeExecApprovalRule = {
-  pattern?: string;
-  action?: string;
-  shells?: string[];
-  description?: string;
-  enabled?: boolean;
-};
-
 function requireApprovalsBaseHash(
   params: unknown,
   snapshot: ExecApprovalsSnapshot,
