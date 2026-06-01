@@ -1,6 +1,7 @@
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { sortUniqueStrings } from "@openclaw/normalization-core/string-normalization";
 
+/** Compiled runtime policy for one safe-bin executable. */
 export type SafeBinProfile = {
   /** Minimum number of literal positional tokens the safe-bin command requires. */
   minPositional?: number;
@@ -16,6 +17,7 @@ export type SafeBinProfile = {
   longFlagPrefixMap?: ReadonlyMap<string, string | null>;
 };
 
+/** JSON-safe profile shape used for config overlays and docs parity fixtures. */
 export type SafeBinProfileFixture = {
   /** JSON-friendly minimum positional-token count. */
   minPositional?: number;
@@ -27,6 +29,7 @@ export type SafeBinProfileFixture = {
   deniedFlags?: readonly string[];
 };
 
+/** Operator-provided safe-bin profile fixtures keyed by normalized executable name. */
 export type SafeBinProfileFixtures = Readonly<Record<string, SafeBinProfileFixture>>;
 
 const NO_FLAGS: ReadonlySet<string> = new Set();
@@ -107,6 +110,11 @@ function compileSafeBinProfiles(
   ) as Record<string, SafeBinProfile>;
 }
 
+/**
+ * Built-in stdin-only safe-bin policy fixtures.
+ *
+ * These stay JSON-friendly so docs parity tests and operator overrides share the same shape.
+ */
 export const SAFE_BIN_PROFILE_FIXTURES: Record<string, SafeBinProfileFixture> = {
   jq: {
     maxPositional: 1,
@@ -232,6 +240,7 @@ export const SAFE_BIN_PROFILE_FIXTURES: Record<string, SafeBinProfileFixture> = 
   },
 };
 
+/** Compiled built-in safe-bin profiles used by runtime argv validation. */
 export const SAFE_BIN_PROFILES: Record<string, SafeBinProfile> =
   compileSafeBinProfiles(SAFE_BIN_PROFILE_FIXTURES);
 
@@ -277,7 +286,12 @@ function normalizeSafeBinProfileFixture(fixture: SafeBinProfileFixture): SafeBin
   };
 }
 
-/** Normalizes operator-provided profile fixtures into deterministic JSON shape. */
+/**
+ * Normalizes operator-provided profile fixtures into deterministic JSON shape.
+ *
+ * Invalid names, negative limits, duplicate flags, and empty flag entries are dropped before the
+ * fixtures are persisted or compiled into runtime profiles.
+ */
 export function normalizeSafeBinProfileFixtures(
   fixtures?: SafeBinProfileFixtures | null,
 ): Record<string, SafeBinProfileFixture> {
@@ -295,7 +309,12 @@ export function normalizeSafeBinProfileFixtures(
   return normalized;
 }
 
-/** Resolves runtime profiles by overlaying normalized fixtures on built-ins. */
+/**
+ * Resolves runtime profiles by overlaying normalized fixtures on built-ins.
+ *
+ * Operator fixtures replace the matching built-in command profile; commands without overrides keep
+ * the compiled defaults.
+ */
 export function resolveSafeBinProfiles(
   fixtures?: SafeBinProfileFixtures | null,
 ): Record<string, SafeBinProfile> {
@@ -322,7 +341,7 @@ function resolveSafeBinDeniedFlags(
   return out;
 }
 
-/** Renders denied safe-bin flags for docs parity checks. */
+/** Renders denied safe-bin flags for docs parity checks and generated documentation blocks. */
 export function renderSafeBinDeniedFlagsDocBullets(
   fixtures: Readonly<Record<string, SafeBinProfileFixture>> = SAFE_BIN_PROFILE_FIXTURES,
 ): string {
@@ -333,7 +352,7 @@ export function renderSafeBinDeniedFlagsDocBullets(
     .join("\n");
 }
 
-/** Renders default safe-bin names for docs parity checks. */
+/** Renders default safe-bin names for docs parity checks and generated documentation blocks. */
 export function renderDefaultSafeBinsDocText(
   defaults: readonly string[] = DEFAULT_SAFE_BINS,
 ): string {
