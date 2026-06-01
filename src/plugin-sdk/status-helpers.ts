@@ -266,6 +266,8 @@ export function createComputedAccountStatusAdapter<
   return {
     ...buildComputedAccountStatusAdapterBase(options),
     buildAccountSnapshot: (params) => {
+      // ChannelStatusAdapter carries erased probe/audit generics through the
+      // SDK boundary; restore the caller's concrete shape before resolving extras.
       const typedParams = params as ComputedAccountStatusAdapterParams<
         ResolvedAccount,
         Probe,
@@ -300,6 +302,8 @@ export function createAsyncComputedAccountStatusAdapter<
   return {
     ...buildComputedAccountStatusAdapterBase(options),
     buildAccountSnapshot: async (params) => {
+      // Keep async adapters shape-compatible with the sync variant so channel
+      // status collectors can treat both as the same public contract.
       const typedParams = params as ComputedAccountStatusAdapterParams<
         ResolvedAccount,
         Probe,
@@ -401,6 +405,8 @@ export function createDependentCredentialStatusIssueCollector(options: {
   const isDependencyConfigured =
     options.isDependencyConfigured ??
     ((value: unknown) => {
+      // String dependency sources use "none" as the public no-credential
+      // sentinel; custom predicates can override this for plugin-specific states.
       const normalized = typeof value === "string" ? normalizeOptionalString(value) : undefined;
       return Boolean(normalized && normalized !== "none");
     });
@@ -433,6 +439,8 @@ export function collectStatusIssuesFromLastError(
     if (!lastError) {
       return [];
     }
+    // Runtime error text is already status-safe at the channel boundary; this
+    // helper only adapts it into the generic issue envelope used by CLI/UI views.
     return [
       {
         channel,
