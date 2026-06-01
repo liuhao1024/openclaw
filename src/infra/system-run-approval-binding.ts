@@ -138,6 +138,7 @@ function argvMatches(expectedArgv: string[], actualArgv: string[]): boolean {
   return true;
 }
 
+/** Result of matching a stored approval binding against the actual system-run request. */
 export type SystemRunApprovalMatchResult =
   | { ok: true }
   | {
