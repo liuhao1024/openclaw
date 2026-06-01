@@ -409,7 +409,7 @@ export type ChannelMessageAdapter<
   TAdapter extends ChannelMessageAdapterShape = ChannelMessageAdapterShape,
 > = TAdapter;
 
-/** Extra durable-final requirement map for caller-derived capability checks. */
+/** Extra durable final-delivery requirements supplied by callers. */
 export type DurableFinalRequirementExtras = DurableFinalDeliveryRequirementMap;
 
 /** Inputs used to derive durable final-delivery requirements for a planned send. */
