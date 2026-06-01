@@ -87,6 +87,8 @@ export async function resolveOpenAiCompatModelOverride(params: {
     return {};
   }
 
+  // Header model overrides use the target agent's default provider as context,
+  // then pass through visibility policy so hidden/catalog-blocked models fail.
   const cfg = getRuntimeConfig();
   const defaultModelRef = resolveDefaultModelForAgent({ cfg, agentId: params.agentId });
   const defaultProvider = defaultModelRef.provider;
@@ -149,6 +151,8 @@ function resolveSessionKey(params: {
 }): string {
   const explicit = getHeader(params.req, "x-openclaw-session-key")?.trim();
   if (explicit) {
+    // Explicit session keys are an interop escape hatch for HTTP clients that
+    // already manage Gateway sessions; generated keys stay agent-scoped below.
     return explicit;
   }
 
