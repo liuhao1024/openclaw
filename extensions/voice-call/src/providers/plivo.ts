@@ -375,6 +375,8 @@ export class PlivoProvider implements VoiceCallProvider {
     callUuid: string;
     webhookBase: string;
   } {
+    // Plivo returns request_uuid at create time and CallUUID later on callbacks;
+    // prefer the adopted CallUUID once the answer/hangup webhook links them.
     const callUuid = this.requestUuidToCallUuid.get(params.providerCallId) ?? params.providerCallId;
     const webhookBase =
       this.callUuidToWebhookUrl.get(callUuid) || this.callIdToWebhookUrl.get(params.callId);
@@ -398,6 +400,8 @@ export class PlivoProvider implements VoiceCallProvider {
     transferUrl.searchParams.set("flow", params.flow);
     transferUrl.searchParams.set("callId", params.callId);
 
+    // Transfer the A-leg to a short-lived XML endpoint so Plivo fetches the
+    // current speak/listen payload without storing text in provider URLs.
     await this.apiRequest({
       method: "POST",
       endpoint: `/Call/${params.callUuid}/`,
@@ -421,6 +425,7 @@ export class PlivoProvider implements VoiceCallProvider {
       locale: input.locale,
     });
 
+    // The xml-speak webhook consumes this pending payload exactly once.
     await this.transferCallLeg({
       callUuid,
       webhookBase,
@@ -440,6 +445,7 @@ export class PlivoProvider implements VoiceCallProvider {
       language: input.language,
     });
 
+    // The xml-listen webhook consumes this pending payload exactly once.
     await this.transferCallLeg({
       callUuid,
       webhookBase,
