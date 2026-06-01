@@ -8,13 +8,21 @@ import {
 
 /** Facts used to detect repeated bot-to-bot channel reply loops. */
 export type ChannelBotLoopProtectionFacts = {
+  /** Channel/account scope that owns the loop guard bucket. */
   scopeId: string;
+  /** Conversation-level id shared by both bot participants. */
   conversationId: string;
+  /** Bot sender id for the current inbound event. */
   senderId: string;
+  /** Bot receiver id that would respond to the current event. */
   receiverId: string;
+  /** Channel-specific loop guard override. */
   config?: PairLoopGuardConfig;
+  /** Product or plugin defaults used when no channel override is set. */
   defaultsConfig?: PairLoopGuardConfig;
+  /** Default enabled state when both config layers omit it. */
   defaultEnabled: boolean;
+  /** Optional clock override for deterministic tests. */
   nowMs?: number;
 };
 

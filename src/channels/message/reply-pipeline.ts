@@ -45,10 +45,13 @@ export type ChannelReplyPipeline = ReplyPrefixOptions & {
 export type CreateChannelReplyPipelineParams = {
   cfg: Parameters<typeof createReplyPrefixOptions>[0]["cfg"];
   agentId: string;
+  /** Channel id used for prefix policy and lazy plugin reply transforms. */
   channel?: string;
+  /** Account id passed to channel-owned reply transforms. */
   accountId?: string;
   typing?: CreateTypingCallbacksParams;
   typingCallbacks?: TypingCallbacks;
+  /** Caller override that runs instead of the channel plugin transform. */
   transformReplyPayload?: (payload: ReplyPayload) => ReplyPayload | null;
 };
 
