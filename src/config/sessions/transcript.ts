@@ -5,7 +5,6 @@ import type { AgentMessage } from "../../agents/runtime/index.js";
 import type { SessionManager } from "../../agents/sessions/session-manager.js";
 import { redactTranscriptMessage } from "../../agents/transcript-redact.js";
 import { formatErrorMessage } from "../../infra/errors.js";
-import { emitSessionTranscriptUpdate } from "../../sessions/transcript-events.js";
 import { extractAssistantVisibleText } from "../../shared/chat-message-content.js";
 import { isTranscriptOnlyOpenClawAssistantModel } from "../../shared/transcript-only-openclaw-assistant.js";
 import type { OpenClawConfig } from "../types.openclaw.js";
@@ -15,10 +14,10 @@ import {
   resolveSessionFilePathOptions,
   resolveSessionTranscriptPath,
 } from "./paths.js";
+import { appendTranscriptMessage, publishTranscriptUpdate } from "./session-accessor.js";
 import { resolveAndPersistSessionFile } from "./session-file.js";
 import { loadSessionStore, resolveSessionStoreEntry, updateSessionStoreEntry } from "./store.js";
 import { parseSessionThreadInfo } from "./thread-info.js";
-import { appendSessionTranscriptMessage } from "./transcript-append.js";
 import { createSessionTranscriptHeader } from "./transcript-header.js";
 import { writeJsonlEntry } from "./transcript-jsonl.js";
 import { resolveMirroredTranscriptText } from "./transcript-mirror.js";
@@ -316,6 +315,13 @@ export async function appendExactAssistantMessageToSessionTranscript(params: {
         ...params.message,
         ...(explicitIdempotencyKey ? { idempotencyKey: explicitIdempotencyKey } : {}),
       } as Parameters<SessionManager["appendMessage"]>[0];
+      const transcriptScope = {
+        sessionFile,
+        sessionId: entry.sessionId,
+        sessionKey: resolved.normalizedKey,
+        storePath,
+        ...(params.agentId ? { agentId: params.agentId } : {}),
+      };
       const {
         messageId,
         message: appendedMessage,
@@ -328,11 +334,10 @@ export async function appendExactAssistantMessageToSessionTranscript(params: {
             sessionId: entry.sessionId,
             cwd: entry.spawnedCwd,
           });
-          return await appendSessionTranscriptMessage({
-            transcriptPath: sessionFile,
+          return await appendTranscriptMessage(transcriptScope, {
             message,
             ...(explicitIdempotencyKey ? { idempotencyLookup: "scan" } : {}),
-            config: params.config,
+            ...(params.config ? { config: params.config } : {}),
           });
         },
       );
@@ -343,8 +348,7 @@ export async function appendExactAssistantMessageToSessionTranscript(params: {
 
       switch (params.updateMode ?? "inline") {
         case "inline":
-          emitSessionTranscriptUpdate({
-            sessionFile,
+          await publishTranscriptUpdate(transcriptScope, {
             sessionKey,
             ...(params.agentId ? { agentId: params.agentId } : {}),
             message: appendedMessage,
@@ -352,8 +356,7 @@ export async function appendExactAssistantMessageToSessionTranscript(params: {
           });
           break;
         case "file-only":
-          emitSessionTranscriptUpdate({
-            sessionFile,
+          await publishTranscriptUpdate(transcriptScope, {
             sessionKey,
             ...(params.agentId ? { agentId: params.agentId } : {}),
           });
