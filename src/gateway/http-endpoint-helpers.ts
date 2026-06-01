@@ -18,13 +18,21 @@ export async function handleGatewayPostJsonEndpoint(
   req: IncomingMessage,
   res: ServerResponse,
   opts: {
+    /** Exact request path owned by the endpoint. */
     pathname: string;
+    /** Resolved Gateway auth policy for this HTTP surface. */
     auth: ResolvedGatewayAuth;
+    /** Maximum JSON request body size accepted before returning 413. */
     maxBodyBytes: number;
+    /** Trusted proxy CIDRs/hosts used when deriving caller identity. */
     trustedProxies?: string[];
+    /** Whether direct remote addresses may be used when proxy headers are absent. */
     allowRealIpFallback?: boolean;
+    /** Optional auth failure budget shared with the wider Gateway HTTP layer. */
     rateLimiter?: AuthRateLimiter;
+    /** Gateway method whose operator scopes gate this endpoint. */
     requiredOperatorMethod?: "chat.send" | (string & Record<never, never>);
+    /** Optional override for deriving operator scopes from an authorized request. */
     resolveOperatorScopes?: (
       req: IncomingMessage,
       requestAuth: AuthorizedGatewayHttpRequest,
