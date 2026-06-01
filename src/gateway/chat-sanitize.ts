@@ -64,6 +64,12 @@ function stripEnvelopeFromContentWithRole(
   return { content: next, changed };
 }
 
+/**
+ * Remove internal routing envelopes from one chat message while preserving shape.
+ *
+ * User messages keep a sender label when the envelope carried one, while
+ * assistant/tool messages only lose internal metadata that should not render.
+ */
 export function stripEnvelopeFromMessage(message: unknown): unknown {
   if (!message || typeof message !== "object") {
     return message;
@@ -107,6 +113,7 @@ export function stripEnvelopeFromMessage(message: unknown): unknown {
   return changed ? next : message;
 }
 
+/** Strip display-only envelopes from a message array without cloning on no-op. */
 export function stripEnvelopeFromMessages(messages: unknown[]): unknown[] {
   if (messages.length === 0) {
     return messages;
