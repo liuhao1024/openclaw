@@ -387,6 +387,8 @@ export async function dispatchAssembledChannelTurn(
                   ? await params.delivery.durable(preparedPayload, info)
                   : params.delivery.durable;
               if (durableOptions) {
+                // Durable delivery handles only final payloads on channels that satisfy required
+                // capabilities; otherwise this branch deliberately falls through to legacy deliver.
                 const durable = await deliverInboundReplyWithMessageSendContext({
                   cfg: params.cfg,
                   channel: params.channel,

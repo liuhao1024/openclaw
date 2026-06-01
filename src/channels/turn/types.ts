@@ -269,23 +269,33 @@ export type PreflightFacts = {
 
 /** Delivery metadata for one reply payload dispatch. */
 export type ChannelDeliveryInfo = {
+  /** Reply dispatcher bucket that produced this payload. */
   kind: ReplyDispatchKind;
 };
 
 /** Durable delivery queue intent recorded when a reply is deferred. */
 export type ChannelDeliveryIntent = {
+  /** Durable outbound queue id for the logical reply send. */
   id: string;
+  /** Discriminator for delivery intents created by the outbound queue. */
   kind: "outbound_queue";
+  /** Queue durability policy selected for this delivery. */
   queuePolicy: OutboundDeliveryQueuePolicy;
 };
 
 /** Result returned after delivering one channel reply payload. */
 export type ChannelDeliveryResult = {
+  /** Platform message ids returned by legacy delivery adapters. */
   messageIds?: string[];
+  /** Normalized message receipt returned by message-lifecycle delivery. */
   receipt?: MessageReceipt;
+  /** Thread/topic id where the visible reply landed. */
   threadId?: string;
+  /** Platform message id that the reply targeted. */
   replyToId?: string;
+  /** Whether the delivery produced a visible platform reply. */
   visibleReplySent?: boolean;
+  /** Durable outbound intent when delivery was queued or tracked asynchronously. */
   deliveryIntent?: ChannelDeliveryIntent;
 };
 
@@ -294,21 +304,27 @@ export type ChannelTurnDurableDeliveryOptions = Pick<
   DeliverOutboundPayloadsParams,
   "deps" | "formatting" | "identity" | "mediaAccess" | "replyToMode" | "silent" | "threadId"
 > & {
+  /** Explicit destination override; null prevents context fallback. */
   to?: string | null;
+  /** Explicit reply target override; null prevents source-message fallback. */
   replyToId?: string | null;
+  /** Capability requirements callers already derived for this payload. */
   requiredCapabilities?: DurableFinalDeliveryRequirements;
 };
 
 /** Delivery adapter used by channel turns to send reply payloads. */
 export type ChannelEventDeliveryAdapter = {
+  /** Normalizes or enriches reply payloads before durable/legacy delivery selection. */
   preparePayload?: (
     payload: ReplyPayload,
     info: ChannelDeliveryInfo,
   ) => Promise<ReplyPayload> | ReplyPayload;
+  /** Legacy delivery path used when durable delivery is disabled or unsupported. */
   deliver: (
     payload: ReplyPayload,
     info: ChannelDeliveryInfo,
   ) => Promise<ChannelDeliveryResult | void>;
+  /** Durable delivery options, or a per-payload resolver that can opt out with false. */
   durable?:
     | false
     | ChannelTurnDurableDeliveryOptions
@@ -319,11 +335,13 @@ export type ChannelEventDeliveryAdapter = {
         | false
         | ChannelTurnDurableDeliveryOptions
         | Promise<false | ChannelTurnDurableDeliveryOptions>);
+  /** Observer called after either durable or legacy delivery returns. */
   onDelivered?: (
     payload: ReplyPayload,
     info: ChannelDeliveryInfo,
     result: ChannelDeliveryResult | void,
   ) => Promise<void> | void;
+  /** Error sink wired into the buffered reply dispatcher. */
   onError?: (err: unknown, info: { kind: string }) => void;
 };
 
