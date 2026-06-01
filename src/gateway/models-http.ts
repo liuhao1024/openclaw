@@ -62,6 +62,8 @@ async function authorizeRequest(
 function loadAgentModelIds(): string[] {
   const cfg = getRuntimeConfig();
   const defaultAgentId = resolveDefaultAgentId(cfg);
+  // The OpenAI-compatible models endpoint exposes Gateway agent selectors as
+  // model ids, not provider catalog models.
   const ids = new Set<string>([OPENCLAW_MODEL_ID, OPENCLAW_DEFAULT_MODEL_ID]);
   ids.add(`openclaw/${defaultAgentId}`);
   for (const agentId of listAgentIds(cfg)) {
@@ -124,6 +126,8 @@ export async function handleOpenAiModelsHttpRequest(
     return true;
   }
 
+  // Single-model lookups must use the same accepted id grammar as chat requests;
+  // syntactically valid but unconfigured agents still fall through to 404 below.
   if (decodedId !== OPENCLAW_MODEL_ID && !resolveAgentIdFromModel(decodedId)) {
     sendInvalidRequest(res, "Invalid model id.");
     return true;
