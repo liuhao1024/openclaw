@@ -2291,43 +2291,69 @@ export type OpenClawPluginNodeHostCommand = {
 
 export type OpenClawPluginNodeInvokeTransportResult =
   | {
+      /** Node accepted and executed the command. */
       ok: true;
+      /** Structured payload returned by newer node transports. */
       payload?: unknown;
+      /** JSON-encoded payload returned by legacy or text-only transports. */
       payloadJSON?: string | null;
     }
   | {
+      /** Node transport rejected, timed out, or failed before producing a payload. */
       ok: false;
+      /** Stable machine-readable failure code when the node supplies one. */
       code?: string;
+      /** Human-readable failure message safe for callers to surface. */
       message: string;
+      /** Optional JSON-safe diagnostic details from the node transport. */
       details?: Record<string, unknown>;
     };
 
 export type OpenClawPluginNodeInvokeApprovalDecision = "allow-once" | "allow-always" | "deny";
 
 export type OpenClawPluginNodeInvokePolicyApprovalRuntime = {
+  /** Request host/operator approval before a policy invokes a sensitive node command. */
   request: (input: {
+    /** Short approval title shown in operator UI. */
     title: string;
+    /** Explanation of the action and target for the approval prompt. */
     description: string;
+    /** Visual severity hint for approval surfaces. */
     severity?: "info" | "warning" | "critical";
+    /** Tool name associated with the approval, when the invoke came from an agent tool. */
     toolName?: string;
+    /** Tool-call id used to correlate approval decisions back to an agent run. */
     toolCallId?: string;
+    /** Agent id associated with this node invocation. */
     agentId?: string;
+    /** Session key associated with this node invocation. */
     sessionKey?: string;
+    /** Approval prompt timeout; omitted uses the host default. */
     timeoutMs?: number;
   }) => Promise<{
+    /** Host-generated approval id for audit trails. */
     id?: string;
+    /** Final operator decision, or null/undefined when no decision was made. */
     decision?: OpenClawPluginNodeInvokeApprovalDecision | null;
   }>;
 };
 
 export type OpenClawPluginNodeInvokePolicyContext = {
+  /** Node id selected by gateway routing. */
   nodeId: string;
+  /** Node command name requested by the caller. */
   command: string;
+  /** Parsed command params; policies may validate or enrich before forwarding. */
   params: unknown;
+  /** Caller-requested timeout passed through to the node transport. */
   timeoutMs?: number;
+  /** Caller-provided idempotency key for retry-safe node actions. */
   idempotencyKey?: string;
+  /** Current config snapshot used for policy decisions. */
   config: OpenClawConfig;
+  /** Owning plugin config snapshot, when the policy belongs to a plugin. */
   pluginConfig?: Record<string, unknown>;
+  /** Last-known node metadata from discovery/heartbeat. */
   node?: {
     nodeId: string;
     displayName?: string;
@@ -2335,11 +2361,14 @@ export type OpenClawPluginNodeInvokePolicyContext = {
     deviceFamily?: string;
     commands?: string[];
   };
+  /** Gateway client identity and scopes for direct API callers. */
   client?: {
     connId?: string;
     scopes?: string[];
   } | null;
+  /** Approval runtime available when the host can ask an operator. */
   approvals?: OpenClawPluginNodeInvokePolicyApprovalRuntime;
+  /** Forward the final params to the selected node after policy checks pass. */
   invokeNode: (input?: {
     params?: unknown;
     timeoutMs?: number;
@@ -2349,19 +2378,28 @@ export type OpenClawPluginNodeInvokePolicyContext = {
 
 export type OpenClawPluginNodeInvokePolicyResult =
   | {
+      /** Policy approved and completed the command. */
       ok: true;
+      /** Structured result returned to the gateway caller. */
       payload?: unknown;
+      /** JSON-encoded result for compatibility with node transports that return strings. */
       payloadJSON?: string | null;
     }
   | {
+      /** Policy denied, failed, or found the node/command unavailable. */
       ok: false;
+      /** Human-readable failure message safe for callers to surface. */
       message: string;
+      /** Stable machine-readable failure code when available. */
       code?: string;
+      /** Optional JSON-safe diagnostics for logs or UI. */
       details?: Record<string, unknown>;
+      /** Marks absence/unreachability separately from policy denial. */
       unavailable?: boolean;
     };
 
 export type OpenClawPluginNodeInvokePolicy = {
+  /** Node commands this policy owns. */
   commands: string[];
   /**
    * Platforms where these node-handled commands should be allowlisted by default.
@@ -2378,16 +2416,22 @@ export type OpenClawPluginNodeInvokePolicy = {
    * when an iOS node reports BACKGROUND_UNAVAILABLE.
    */
   foregroundRestrictedOnIos?: boolean;
+  /** Validate, authorize, and optionally forward a node invocation. */
   handle: (
     ctx: OpenClawPluginNodeInvokePolicyContext,
   ) => Promise<OpenClawPluginNodeInvokePolicyResult> | OpenClawPluginNodeInvokePolicyResult;
 };
 
 export type OpenClawPluginSecurityAuditContext = {
+  /** Normalized config currently used by OpenClaw. */
   config: OpenClawConfig;
+  /** Source config before normalization, useful for finding risky raw values. */
   sourceConfig: OpenClawConfig;
+  /** Process env snapshot supplied by the host; collectors must not print secrets. */
   env: NodeJS.ProcessEnv;
+  /** OpenClaw state directory for file-backed audit checks. */
   stateDir: string;
+  /** Path to the config file being audited. */
   configPath: string;
 };
 
@@ -2396,20 +2440,32 @@ export type OpenClawPluginSecurityAuditCollector = (
 ) => SecurityAuditFinding[] | Promise<SecurityAuditFinding[]>;
 
 export type OpenClawGatewayDiscoveryAdvertiseContext = {
+  /** Human-readable machine name advertised to local discovery clients. */
   machineDisplayName: string;
+  /** Gateway HTTP/WebSocket port. */
   gatewayPort: number;
+  /** Whether gateway discovery should advertise HTTPS/WSS endpoints. */
   gatewayTlsEnabled: boolean;
+  /** TLS fingerprint for clients that pin or verify gateway certificates. */
   gatewayTlsFingerprintSha256?: string;
+  /** Whether the gateway believes direct LAN access should work. */
   gatewayDirectReachable: boolean;
+  /** Optional Canvas/device UI port advertised alongside gateway metadata. */
   canvasPort?: number;
+  /** Tailnet DNS name when remote clients should prefer Tailscale routing. */
   tailnetDns?: string;
+  /** SSH port when discovery should include shell access metadata. */
   sshPort?: number;
+  /** CLI path clients can use for local command examples. */
   cliPath?: string;
+  /** Minimal advertisements omit optional rich metadata for constrained clients. */
   minimal: boolean;
 };
 
 export type OpenClawGatewayDiscoveryService = {
+  /** Stable discovery service id used for diagnostics and shutdown. */
   id: string;
+  /** Start advertising and optionally return a stop handle for cleanup. */
   advertise: (
     ctx: OpenClawGatewayDiscoveryAdvertiseContext,
   ) => void | Promise<void | { stop?: () => void | Promise<void> }>;
@@ -2417,14 +2473,20 @@ export type OpenClawGatewayDiscoveryService = {
 
 /** Context passed to long-lived plugin services. */
 export type OpenClawPluginServiceContext = {
+  /** Current config snapshot available when the service starts. */
   config: OpenClawConfig;
+  /** Workspace directory for services that need repo-relative defaults. */
   workspaceDir?: string;
+  /** OpenClaw state directory for plugin-owned service state. */
   stateDir: string;
+  /** Plugin-scoped service logger. */
   logger: PluginLogger;
+  /** Startup timing hooks used by the host to attribute service startup cost. */
   startupTrace?: {
     detail?: (name: string, metrics: ReadonlyArray<readonly [string, number | string]>) => void;
     measure: <T>(name: string, run: () => T | Promise<T>) => Promise<T>;
   };
+  /** Private diagnostics bus for trusted services that emit runtime events. */
   internalDiagnostics?: {
     emit: (event: DiagnosticEventInput, privateData?: DiagnosticEventPrivateData) => void;
     onEvent: (
@@ -2439,20 +2501,28 @@ export type OpenClawPluginServiceContext = {
 
 /** Background service registered by a plugin during `register(api)`. */
 export type OpenClawPluginService = {
+  /** Stable service id used for duplicate detection, lifecycle, and status output. */
   id: string;
+  /** Start the background service; called only in live runtime registration modes. */
   start: (ctx: OpenClawPluginServiceContext) => void | Promise<void>;
+  /** Stop hook called during plugin/runtime shutdown when available. */
   stop?: (ctx: OpenClawPluginServiceContext) => void | Promise<void>;
 };
 
 export type OpenClawPluginChannelRegistration = {
+  /** Native channel plugin implementation registered by this plugin. */
   plugin: ChannelPlugin;
 };
 
 /** Module-level plugin definition loaded from a native plugin entry file. */
 export type OpenClawPluginDefinition = {
+  /** Runtime plugin id; manifests should provide this for metadata-only paths. */
   id?: string;
+  /** Human-readable plugin name. */
   name?: string;
+  /** Human-readable plugin description. */
   description?: string;
+  /** Plugin package/runtime version. */
   version?: string;
   /**
    * @deprecated Declare exclusive plugin kind in `openclaw.plugin.json` via
@@ -2461,11 +2531,17 @@ export type OpenClawPluginDefinition = {
    * metadata-only command paths.
    */
   kind?: PluginKind | PluginKind[];
+  /** Plugin-owned config schema exposed to validation, setup, and docs surfaces. */
   configSchema?: OpenClawPluginConfigSchema;
+  /** Config reload metadata registered without requiring `register(api)`. */
   reload?: OpenClawPluginReloadRegistration;
+  /** Host-side node commands exported directly from the module. */
   nodeHostCommands?: OpenClawPluginNodeHostCommand[];
+  /** Security audit collectors exported directly from the module. */
   securityAuditCollectors?: OpenClawPluginSecurityAuditCollector[];
+  /** Primary registration hook for native runtime capabilities. */
   register?: (api: OpenClawPluginApi) => void;
+  /** Legacy activation hook; prefer `register` for new native plugins. */
   activate?: (api: OpenClawPluginApi) => void;
 };
 
@@ -2631,7 +2707,9 @@ export type MigrationProviderPlugin = {
 };
 
 export type PluginSetupAutoEnableContext = {
+  /** Current config snapshot used by auto-enable probes. */
   config: OpenClawConfig;
+  /** Process env snapshot used to detect configured integrations. */
   env: NodeJS.ProcessEnv;
 };
 
@@ -2795,10 +2873,15 @@ export type OpenClawPluginApi = {
     registrar: OpenClawPluginCliRegistrar,
     opts?: OpenClawPluginNodeCliFeatureOptions,
   ) => void;
+  /** Register config reload behavior for plugin-owned config paths. */
   registerReload: (registration: OpenClawPluginReloadRegistration) => void;
+  /** Register a host-executed node command for paired device integrations. */
   registerNodeHostCommand: (command: OpenClawPluginNodeHostCommand) => void;
+  /** Register node invocation policy for gateway/device command dispatch. */
   registerNodeInvokePolicy: (policy: OpenClawPluginNodeInvokePolicy) => void;
+  /** Register a plugin-owned security audit collector. */
   registerSecurityAuditCollector: (collector: OpenClawPluginSecurityAuditCollector) => void;
+  /** Register a long-lived plugin service started by the runtime host. */
   registerService: (service: OpenClawPluginService) => void;
   /** Register a local gateway discovery advertiser such as mDNS/Bonjour. */
   registerGatewayDiscoveryService: (service: OpenClawGatewayDiscoveryService) => void;
