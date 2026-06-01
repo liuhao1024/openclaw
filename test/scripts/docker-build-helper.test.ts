@@ -2234,7 +2234,9 @@ output="$(run_logged_print_heartbeat plugins-run 08 bash -c 'printf "captured co
     expect(probe).toContain('"openclaw.plugin.json"');
     expect(runtimeSmoke).toContain("process.env.OPENCLAW_BUNDLED_PLUGIN_RUNTIME_READY_MS");
     expect(runtimeSmoke).toContain("900000");
-    expect(sweep).toContain("read -r plugin_id plugin_dir requires_config");
+    expect(sweep).toContain(
+      "read -r plugin_id plugin_dir install_requires_config runtime_requires_config plugin_root",
+    );
     expect(sweep).toContain('node "$OPENCLAW_ENTRY" plugins install "$plugin_id"');
     expect(sweep).toContain('node "$OPENCLAW_ENTRY" plugins uninstall "$plugin_id" --force');
     expect(sweep).toContain("now_ms()");
