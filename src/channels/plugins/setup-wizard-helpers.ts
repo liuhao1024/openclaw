@@ -352,6 +352,7 @@ export function setTopLevelChannelAllowFrom(params: {
   });
 }
 
+/** Writes a nested allowFrom list for setup helpers with section-scoped config. */
 export function setNestedChannelAllowFrom(params: {
   cfg: OpenClawConfig;
   channel: string;
@@ -368,6 +369,7 @@ export function setNestedChannelAllowFrom(params: {
   });
 }
 
+/** Sets a top-level DM policy and carries allowFrom forward when opening access. */
 export function setTopLevelChannelDmPolicyWithAllowFrom(params: {
   cfg: OpenClawConfig;
   channel: string;
@@ -392,6 +394,7 @@ export function setTopLevelChannelDmPolicyWithAllowFrom(params: {
   });
 }
 
+/** Sets a nested DM policy and carries allowFrom forward when opening access. */
 export function setNestedChannelDmPolicyWithAllowFrom(params: {
   cfg: OpenClawConfig;
   channel: string;
@@ -422,6 +425,7 @@ export function setNestedChannelDmPolicyWithAllowFrom(params: {
   });
 }
 
+/** Sets a top-level group policy for setup helpers that do not use nested sections. */
 export function setTopLevelChannelGroupPolicy(params: {
   cfg: OpenClawConfig;
   channel: string;
@@ -436,6 +440,7 @@ export function setTopLevelChannelGroupPolicy(params: {
   });
 }
 
+/** Builds the setup wizard DM-policy descriptor for top-level channel config. */
 export function createTopLevelChannelDmPolicy(params: {
   label: string;
   channel: string;
@@ -460,6 +465,7 @@ export function createTopLevelChannelDmPolicy(params: {
   };
 }
 
+/** Builds the setup wizard DM-policy descriptor for nested channel config. */
 export function createNestedChannelDmPolicy(params: {
   label: string;
   channel: string;
@@ -488,6 +494,7 @@ export function createNestedChannelDmPolicy(params: {
   };
 }
 
+/** Creates a top-level DM policy setter suitable for wizard descriptors. */
 export function createTopLevelChannelDmPolicySetter(params: {
   channel: string;
   getAllowFrom?: (cfg: OpenClawConfig) => Array<string | number> | undefined;
@@ -501,6 +508,7 @@ export function createTopLevelChannelDmPolicySetter(params: {
     });
 }
 
+/** Creates a nested DM policy setter suitable for wizard descriptors. */
 export function createNestedChannelDmPolicySetter(params: {
   channel: string;
   section: string;
@@ -518,6 +526,7 @@ export function createNestedChannelDmPolicySetter(params: {
     });
 }
 
+/** Creates a top-level allowFrom setter suitable for wizard descriptors. */
 export function createTopLevelChannelAllowFromSetter(params: {
   channel: string;
   enabled?: boolean;
@@ -531,6 +540,7 @@ export function createTopLevelChannelAllowFromSetter(params: {
     });
 }
 
+/** Creates a nested allowFrom setter suitable for wizard descriptors. */
 export function createNestedChannelAllowFromSetter(params: {
   channel: string;
   section: string;
@@ -546,6 +556,7 @@ export function createNestedChannelAllowFromSetter(params: {
     });
 }
 
+/** Creates a top-level group-policy setter suitable for wizard descriptors. */
 export function createTopLevelChannelGroupPolicySetter(params: {
   channel: string;
   enabled?: boolean;
@@ -559,6 +570,7 @@ export function createTopLevelChannelGroupPolicySetter(params: {
     });
 }
 
+/** Sets DM policy on a channel and adds "*" when switching the policy to open. */
 export function setChannelDmPolicyWithAllowFrom(params: {
   cfg: OpenClawConfig;
   channel: string;
@@ -583,6 +595,7 @@ export function setChannelDmPolicyWithAllowFrom(params: {
   };
 }
 
+/** Sets the compatibility DM policy shape while preserving nested dm enablement. */
 export function setCompatChannelDmPolicyWithAllowFrom(params: {
   cfg: OpenClawConfig;
   channel: string;
@@ -612,6 +625,7 @@ export function setCompatChannelDmPolicyWithAllowFrom(params: {
   });
 }
 
+/** Writes allowFrom through the compatibility DM config patcher. */
 export function setCompatChannelAllowFrom(params: {
   cfg: OpenClawConfig;
   channel: string;
@@ -624,6 +638,7 @@ export function setCompatChannelAllowFrom(params: {
   });
 }
 
+/** Sets account-scoped group policy and enables the account/channel as needed. */
 export function setAccountGroupPolicyForChannel(params: {
   cfg: OpenClawConfig;
   channel: string;
@@ -638,6 +653,7 @@ export function setAccountGroupPolicyForChannel(params: {
   });
 }
 
+/** Sets account-scoped DM allowFrom and forces DM policy to allowlist. */
 export function setAccountDmAllowFromForChannel(params: {
   cfg: OpenClawConfig;
   channel: string;
@@ -652,6 +668,7 @@ export function setAccountDmAllowFromForChannel(params: {
   });
 }
 
+/** Builds a DM-policy descriptor for channels that still support the compat DM shape. */
 export function createCompatChannelDmPolicy(params: {
   label: string;
   channel: string;
@@ -728,6 +745,7 @@ export function createCompatChannelDmPolicy(params: {
   };
 }
 
+/** Resolves group allowlist entries, showing setup notes and falling back on lookup failure. */
 export async function resolveGroupAllowlistWithLookupNotes<TResolved>(params: {
   label: string;
   prompter: Pick<WizardPrompter, "note">;
@@ -753,6 +771,7 @@ export async function resolveGroupAllowlistWithLookupNotes<TResolved>(params: {
   }
 }
 
+/** Builds an account-scoped allowFrom wizard section backed by the shared account patcher. */
 export function createAccountScopedAllowFromSection(params: {
   channel: string;
   credentialInputKey?: NonNullable<ChannelSetupWizard["allowFrom"]>["credentialInputKey"];
@@ -783,6 +802,7 @@ export function createAccountScopedAllowFromSection(params: {
   };
 }
 
+/** Builds an account-scoped group-access wizard section with lookup-failure notes. */
 export function createAccountScopedGroupAccessSection<TResolved>(params: {
   channel: string;
   label: string;
@@ -850,6 +870,7 @@ export function createAccountScopedGroupAccessSection<TResolved>(params: {
 type AccountScopedChannel = string;
 type CompatDmChannel = string;
 
+/** Patches compat DM channel config while keeping the nested dm block enabled by default. */
 export function patchCompatDmChannelConfig(params: {
   cfg: OpenClawConfig;
   channel: string;
@@ -867,6 +888,7 @@ export function patchCompatDmChannelConfig(params: {
         ...patch,
         dm: {
           ...dmConfig,
+          // Compat DM setup owns policy/allowFrom at the root but still needs dm enabled.
           enabled: typeof dmConfig.enabled === "boolean" ? dmConfig.enabled : true,
         },
       },
@@ -874,6 +896,7 @@ export function patchCompatDmChannelConfig(params: {
   };
 }
 
+/** Toggles the channel enabled flag without disturbing existing setup config. */
 export function setSetupChannelEnabled(
   cfg: OpenClawConfig,
   channel: string,
