@@ -491,6 +491,7 @@ function mapRunTaskInFlowCreateError(params: {
   throw params.error;
 }
 
+/** Spawns a managed child task inside a TaskFlow after validating flow state. */
 export function runTaskInFlow(params: RunTaskInFlowParams): RunTaskInFlowResult {
   const flow = getTaskFlowById(params.flowId);
   if (!flow) {
@@ -525,6 +526,8 @@ export function runTaskInFlow(params: RunTaskInFlowParams): RunTaskInFlowResult 
     };
   }
 
+  // Child tasks inherit the flow owner and requester origin so downstream task
+  // APIs can enforce the same session boundary as the parent flow.
   const common = {
     runtime: params.runtime,
     sourceId: params.sourceId,
@@ -585,6 +588,7 @@ export function runTaskInFlow(params: RunTaskInFlowParams): RunTaskInFlowResult 
   };
 }
 
+/** Owner-scoped wrapper for managed child task creation. */
 export function runTaskInFlowForOwner(
   params: RunTaskInFlowParams & { callerOwnerKey: string },
 ): RunTaskInFlowResult {
@@ -619,6 +623,7 @@ export function runTaskInFlowForOwner(
   });
 }
 
+/** Requests cancellation for a TaskFlow, then cancels active children before closing it. */
 export async function cancelFlowById(params: {
   cfg: OpenClawConfig;
   flowId: string;
@@ -640,6 +645,8 @@ export async function cancelFlowById(params: {
       tasks: listTasksForFlowId(flow.flowId),
     };
   }
+  // Mark the flow first to prevent new children from being linked while the
+  // currently active child tasks are being cancelled asynchronously.
   const cancelRequestedFlow = markFlowCancelRequested(flow);
   if ("reason" in cancelRequestedFlow) {
     return {
@@ -672,6 +679,8 @@ export async function cancelFlowById(params: {
   const now = Date.now();
   const refreshedFlow = getTaskFlowById(flow.flowId) ?? cancelRequestedFlow;
   if (isTerminalFlowStatus(refreshedFlow.status)) {
+    // A child finalizer may have already closed the flow after observing the
+    // cancellation request, so report that terminal state instead of rewriting it.
     return {
       found: true,
       cancelled: refreshedFlow.status === "cancelled",
@@ -701,6 +710,7 @@ export async function cancelFlowById(params: {
   };
 }
 
+/** Owner-scoped TaskFlow cancellation entry point for plugin/runtime callers. */
 export async function cancelFlowByIdForOwner(params: {
   cfg: OpenClawConfig;
   flowId: string;
