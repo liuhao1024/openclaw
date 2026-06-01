@@ -1885,14 +1885,19 @@ export type ProviderPlugin = {
 
 /** Speech capability registered by a plugin. */
 export type SpeechProviderPlugin = {
+  /** Stable speech provider id used by config and provider lookup. */
   id: SpeechProviderId;
+  /** Human-readable label shown in setup/status surfaces. */
   label: string;
+  /** Alternate ids accepted by config/provider lookup. */
   aliases?: string[];
   autoSelectOrder?: number;
   /** Default provider operation timeout in milliseconds when caller/config omit timeoutMs. */
   defaultTimeoutMs?: number;
   defaultModel?: string;
+  /** Known model ids for picker/help surfaces; provider may still accept dynamic ids. */
   models?: readonly string[];
+  /** Known voice ids for picker/help surfaces. */
   voices?: readonly string[];
   resolveConfig?: (ctx: SpeechProviderResolveConfigContext) => SpeechProviderConfig;
   parseDirectiveToken?: (ctx: SpeechDirectiveTokenParseContext) => SpeechDirectiveTokenParseResult;
@@ -1907,7 +1912,9 @@ export type SpeechProviderPlugin = {
     | undefined
     | Promise<SpeechProviderPreparedSynthesis | undefined>;
   isConfigured: (ctx: SpeechProviderConfiguredContext) => boolean;
+  /** Required one-shot synthesis path. */
   synthesize: (req: SpeechSynthesisRequest) => Promise<SpeechSynthesisResult>;
+  /** Optional streaming synthesis path for providers that support incremental audio. */
   streamSynthesize?: (req: SpeechSynthesisStreamRequest) => Promise<SpeechSynthesisStreamResult>;
   synthesizeTelephony?: (
     req: SpeechTelephonySynthesisRequest,
@@ -1916,12 +1923,15 @@ export type SpeechProviderPlugin = {
 };
 
 export type PluginSpeechProviderEntry = SpeechProviderPlugin & {
+  /** Owning plugin id attached by the registry. */
   pluginId: string;
 };
 
 /** Realtime transcription capability registered by a plugin. */
 export type RealtimeTranscriptionProviderPlugin = {
+  /** Stable realtime transcription provider id used by config and provider lookup. */
   id: RealtimeTranscriptionProviderId;
+  /** Human-readable label shown in setup/status surfaces. */
   label: string;
   aliases?: string[];
   defaultModel?: string;
@@ -1931,10 +1941,12 @@ export type RealtimeTranscriptionProviderPlugin = {
     ctx: RealtimeTranscriptionProviderResolveConfigContext,
   ) => RealtimeTranscriptionProviderConfig;
   isConfigured: (ctx: RealtimeTranscriptionProviderConfiguredContext) => boolean;
+  /** Creates a provider-owned live transcription session. */
   createSession: (req: RealtimeTranscriptionSessionCreateRequest) => RealtimeTranscriptionSession;
 };
 
 export type PluginRealtimeTranscriptionProviderEntry = RealtimeTranscriptionProviderPlugin & {
+  /** Owning plugin id attached by the registry. */
   pluginId: string;
 };
 
@@ -1947,7 +1959,9 @@ export type PluginTranscriptsSourceProviderEntry = TranscriptSourceProvider & {
 
 /** Realtime voice capability registered by a plugin. */
 export type RealtimeVoiceProviderPlugin = {
+  /** Stable realtime voice provider id used by config and provider lookup. */
   id: RealtimeVoiceProviderId;
+  /** Human-readable label shown in setup/status surfaces. */
   label: string;
   aliases?: string[];
   defaultModel?: string;
@@ -1956,6 +1970,7 @@ export type RealtimeVoiceProviderPlugin = {
   capabilities?: RealtimeVoiceProviderCapabilities;
   resolveConfig?: (ctx: RealtimeVoiceProviderResolveConfigContext) => RealtimeVoiceProviderConfig;
   isConfigured: (ctx: RealtimeVoiceProviderConfiguredContext) => boolean;
+  /** Creates the provider-owned realtime voice bridge used by call/meeting runtimes. */
   createBridge: (req: RealtimeVoiceBridgeCreateRequest) => RealtimeVoiceBridge;
   createBrowserSession?: (
     req: RealtimeVoiceBrowserSessionCreateRequest,
@@ -1963,6 +1978,7 @@ export type RealtimeVoiceProviderPlugin = {
 };
 
 export type PluginRealtimeVoiceProviderEntry = RealtimeVoiceProviderPlugin & {
+  /** Owning plugin id attached by the registry. */
   pluginId: string;
 };
 
