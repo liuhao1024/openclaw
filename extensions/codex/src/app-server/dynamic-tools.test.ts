@@ -36,6 +36,25 @@ function createTool(overrides: Partial<AnyAgentTool>): AnyAgentTool {
   } as unknown as AnyAgentTool;
 }
 
+function createToolWithUnreadableField(
+  field: "description" | "parameters",
+  params: { name: string; execute: ReturnType<typeof vi.fn> },
+): AnyAgentTool {
+  const base = {
+    name: params.name,
+    description: "Unreadable descriptor tool.",
+    parameters: { type: "object", properties: {} },
+    execute: params.execute,
+  };
+  Object.defineProperty(base, field, {
+    enumerable: true,
+    get() {
+      throw new Error(`${field} getter exploded`);
+    },
+  });
+  return base as unknown as AnyAgentTool;
+}
+
 function mediaResult(mediaUrl: string, audioAsVoice?: boolean): AgentToolResult<unknown> {
   return {
     content: [{ type: "text", text: "Generated media reply." }],
@@ -369,6 +388,141 @@ describe("createCodexDynamicToolBridge", () => {
       contentItems: [{ type: "inputText", text: "Unknown OpenClaw tool: fuzzplugin_move_angles" }],
     });
     expect(badExecute).not.toHaveBeenCalled();
+  });
+
+  it("quarantines unreadable dynamic tool descriptors before wrapping", async () => {
+    const warn = vi.spyOn(embeddedAgentLog, "warn").mockImplementation(() => undefined);
+    const diagnosticEvents: DiagnosticEventPayload[] = [];
+    const unsubscribeDiagnostics = onInternalDiagnosticEvent((event) =>
+      diagnosticEvents.push(event),
+    );
+    const unreadableParametersExecute = vi.fn();
+    const unreadableDescriptionExecute = vi.fn();
+    let bridge!: ReturnType<typeof createCodexDynamicToolBridge>;
+    try {
+      bridge = createCodexDynamicToolBridge({
+        tools: [
+          createTool({
+            name: "message",
+            execute: vi.fn(async () => textToolResult("healthy reply")),
+          }),
+          createToolWithUnreadableField("parameters", {
+            name: "fuzzplugin_unreadable_parameters",
+            execute: unreadableParametersExecute,
+          }),
+          createToolWithUnreadableField("description", {
+            name: "fuzzplugin_unreadable_description",
+            execute: unreadableDescriptionExecute,
+          }),
+        ],
+        signal: new AbortController().signal,
+        hookContext: {
+          runId: "run-unreadable",
+          sessionId: "session-unreadable",
+          sessionKey: "agent:main:session-unreadable",
+        },
+      });
+      await waitForDiagnosticEventsDrained();
+    } finally {
+      unsubscribeDiagnostics();
+    }
+
+    expect(bridge.availableSpecs.map((tool) => tool.name)).toEqual(["message"]);
+    expect(bridge.specs.map((tool) => tool.name)).toEqual(["message"]);
+    expect(bridge.telemetry.quarantinedTools).toEqual([
+      {
+        tool: "fuzzplugin_unreadable_parameters",
+        violations: ["fuzzplugin_unreadable_parameters.parameters is unreadable"],
+      },
+      {
+        tool: "fuzzplugin_unreadable_description",
+        violations: ["fuzzplugin_unreadable_description.description is unreadable"],
+      },
+    ]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("fuzzplugin_unreadable_parameters"),
+      expect.objectContaining({
+        tools: expect.arrayContaining([
+          {
+            tool: "fuzzplugin_unreadable_parameters",
+            violations: ["fuzzplugin_unreadable_parameters.parameters is unreadable"],
+          },
+          {
+            tool: "fuzzplugin_unreadable_description",
+            violations: ["fuzzplugin_unreadable_description.description is unreadable"],
+          },
+        ]),
+      }),
+    );
+    const blockedToolNames = diagnosticEvents
+      .filter(
+        (event): event is Extract<DiagnosticEventPayload, { type: "tool.execution.blocked" }> =>
+          event.type === "tool.execution.blocked",
+      )
+      .map((event) => event.toolName)
+      .toSorted();
+    expect(blockedToolNames).toEqual([
+      "fuzzplugin_unreadable_description",
+      "fuzzplugin_unreadable_parameters",
+    ]);
+
+    const result = await bridge.handleToolCall({
+      threadId: "thread-1",
+      turnId: "turn-1",
+      callId: "call-1",
+      namespace: null,
+      tool: "message",
+      arguments: {},
+    });
+
+    expect(result).toEqual(expectInputText("healthy reply"));
+    expect(unreadableParametersExecute).not.toHaveBeenCalled();
+    expect(unreadableDescriptionExecute).not.toHaveBeenCalled();
+  });
+
+  it("quarantines unreadable dynamic tool entries while keeping healthy siblings", async () => {
+    const warn = vi.spyOn(embeddedAgentLog, "warn").mockImplementation(() => undefined);
+    const hiddenExecute = vi.fn();
+    const tools = [
+      createTool({ name: "message" }),
+      createTool({
+        name: "hidden_bad_tool",
+        execute: hiddenExecute,
+      }),
+      createTool({ name: "web_search" }),
+    ];
+    Object.defineProperty(tools, "1", {
+      configurable: true,
+      get() {
+        throw new Error("tool entry getter exploded");
+      },
+    });
+
+    const bridge = createCodexDynamicToolBridge({
+      tools,
+      signal: new AbortController().signal,
+    });
+
+    expect(bridge.availableSpecs.map((tool) => tool.name)).toEqual(["message", "web_search"]);
+    expect(bridge.specs.map((tool) => tool.name)).toEqual(["message", "web_search"]);
+    expect(bridge.telemetry.quarantinedTools).toEqual([
+      {
+        tool: "tool[1]",
+        violations: ["tool[1] is unreadable"],
+      },
+    ]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("tool[1]"),
+      expect.objectContaining({
+        tools: [
+          {
+            tool: "tool[1]",
+            violations: ["tool[1] is unreadable"],
+          },
+        ],
+      }),
+    );
+    expect(hiddenExecute).not.toHaveBeenCalled();
   });
 
   it("can expose all dynamic tools directly for compatibility", () => {
