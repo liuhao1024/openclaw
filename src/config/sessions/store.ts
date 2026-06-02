@@ -16,7 +16,7 @@ import { getFileStatSnapshot } from "../cache-utils.js";
 import { getRuntimeConfig } from "../io.js";
 import { enforceSessionDiskBudget, type SessionDiskBudgetSweepResult } from "./disk-budget.js";
 import { deriveSessionMetaPatch } from "./metadata.js";
-import { resolveStorePath } from "./paths.js";
+import { resolveSessionFilePath, resolveStorePath } from "./paths.js";
 import {
   ensureSessionStorePromptBlobsForPersistence,
   isSessionSkillPromptBlobReadable,
@@ -187,6 +187,24 @@ type SessionEntryWorkflowOptions = {
   env?: NodeJS.ProcessEnv;
   hydrateSkillPromptRefs?: boolean;
   storePath?: string;
+};
+
+export type SessionLifecycleArtifactCleanupParams = {
+  /** Session store to clean. */
+  storePath: string;
+  /** Matches the persisted session-key segment after `agent:<id>:`. */
+  sessionKeySegmentPrefix: string;
+  /** Marker that identifies transcript artifacts owned by this lifecycle. */
+  transcriptContentMarker: string;
+  /** Minimum age before a present transcript can be reclaimed or archived. */
+  orphanTranscriptMinAgeMs: number;
+  /** Testable clock override. */
+  nowMs?: number;
+};
+
+export type SessionLifecycleArtifactCleanupResult = {
+  removedEntries: number;
+  archivedTranscriptArtifacts: number;
 };
 
 function cloneSessionEntry(entry: SessionEntry): SessionEntry {
@@ -494,6 +512,55 @@ function sessionEntriesHaveSameSerializedForm(
   next: SessionEntry,
 ): boolean {
   return previous !== undefined && JSON.stringify(previous) === JSON.stringify(next);
+}
+
+function normalizePathForLifecycleComparison(filePath: string): string {
+  try {
+    return path.normalize(fs.realpathSync(filePath));
+  } catch {
+    return path.normalize(path.resolve(filePath));
+  }
+}
+
+function sessionKeySegmentStartsWith(sessionKey: string, prefix: string): boolean {
+  const firstSeparator = sessionKey.indexOf(":");
+  if (firstSeparator < 0) {
+    return sessionKey.startsWith(prefix);
+  }
+  const secondSeparator = sessionKey.indexOf(":", firstSeparator + 1);
+  const sessionSegment = secondSeparator < 0 ? sessionKey : sessionKey.slice(secondSeparator + 1);
+  return sessionSegment.startsWith(prefix);
+}
+
+function resolveLifecycleTranscriptPath(params: {
+  entry: SessionEntry | undefined;
+  sessionsDir: string;
+}): string | null {
+  const sessionId = params.entry?.sessionId?.trim();
+  if (!sessionId) {
+    return null;
+  }
+  try {
+    return resolveSessionFilePath(sessionId, params.entry, { sessionsDir: params.sessionsDir });
+  } catch {
+    return null;
+  }
+}
+
+function lifecycleTranscriptIsReclaimable(params: {
+  transcriptPath: string | null;
+  nowMs: number;
+  orphanTranscriptMinAgeMs: number;
+}): boolean {
+  if (!params.transcriptPath || !fs.existsSync(params.transcriptPath)) {
+    return true;
+  }
+  try {
+    const stat = fs.statSync(params.transcriptPath);
+    return params.nowMs - stat.mtimeMs >= params.orphanTranscriptMinAgeMs;
+  } catch {
+    return true;
+  }
 }
 
 async function saveSessionStoreUnlocked(
@@ -806,6 +873,155 @@ export async function updateSessionStore<T>(
     });
     return result;
   });
+}
+
+async function archiveUnreferencedLifecycleTranscriptArtifacts(params: {
+  referencedTranscriptPaths: ReadonlySet<string>;
+  storePath: string;
+  transcriptContentMarker: string;
+  orphanTranscriptMinAgeMs: number;
+  nowMs: number;
+}): Promise<number> {
+  const sessionsDir = path.dirname(path.resolve(params.storePath));
+  let entries: fs.Dirent[];
+  try {
+    entries = await fs.promises.readdir(sessionsDir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+
+  const { archiveSessionTranscripts } = await loadSessionArchiveRuntime();
+  let archived = 0;
+  // Only archive primary transcripts that are no longer referenced by the
+  // current store and still carry the lifecycle marker supplied by the caller.
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".jsonl")) {
+      continue;
+    }
+    const transcriptPath = path.join(sessionsDir, entry.name);
+    if (params.referencedTranscriptPaths.has(normalizePathForLifecycleComparison(transcriptPath))) {
+      continue;
+    }
+    let stat: fs.Stats;
+    try {
+      stat = await fs.promises.stat(transcriptPath);
+    } catch {
+      continue;
+    }
+    if (params.nowMs - stat.mtimeMs < params.orphanTranscriptMinAgeMs) {
+      continue;
+    }
+    let content: string;
+    try {
+      content = await fs.promises.readFile(transcriptPath, "utf-8");
+    } catch {
+      continue;
+    }
+    if (!content.includes(params.transcriptContentMarker)) {
+      continue;
+    }
+    const sessionId = entry.name.slice(0, -".jsonl".length);
+    archived += archiveSessionTranscripts({
+      sessionId,
+      storePath: params.storePath,
+      sessionFile: transcriptPath,
+      reason: "deleted",
+      restrictToStoreDir: true,
+    }).length;
+  }
+  return archived;
+}
+
+/** Cleans scoped session lifecycle entries and their unreferenced transcript artifacts. */
+export async function cleanupSessionLifecycleArtifacts(
+  params: SessionLifecycleArtifactCleanupParams,
+): Promise<SessionLifecycleArtifactCleanupResult> {
+  const sessionKeySegmentPrefix = params.sessionKeySegmentPrefix.trim();
+  const transcriptContentMarker = params.transcriptContentMarker;
+  if (!sessionKeySegmentPrefix || !transcriptContentMarker) {
+    return { removedEntries: 0, archivedTranscriptArtifacts: 0 };
+  }
+
+  const nowMs = params.nowMs ?? Date.now();
+  const storePath = path.resolve(params.storePath);
+  const sessionsDir = path.dirname(storePath);
+  const referencedTranscriptPaths = new Set<string>();
+  const removedSessionFiles = new Map<string, string | undefined>();
+  let removedEntries = 0;
+  let archivedTranscriptArtifacts = 0;
+
+  await runExclusiveSessionStoreWrite(storePath, async () => {
+    const store = loadMutableSessionStoreForWriter(storePath);
+    // Delete only rows owned by the named lifecycle, then build the remaining
+    // transcript reference set while the store snapshot is writer-owned.
+    for (const [sessionKey, entry] of Object.entries(store)) {
+      const transcriptPath = resolveLifecycleTranscriptPath({ entry, sessionsDir });
+      const matchesLifecycle = sessionKeySegmentStartsWith(sessionKey, sessionKeySegmentPrefix);
+      if (
+        matchesLifecycle &&
+        lifecycleTranscriptIsReclaimable({
+          transcriptPath,
+          nowMs,
+          orphanTranscriptMinAgeMs: params.orphanTranscriptMinAgeMs,
+        })
+      ) {
+        rememberRemovedSessionFile(removedSessionFiles, entry);
+        delete store[sessionKey];
+        removedEntries += 1;
+        continue;
+      }
+      if (transcriptPath) {
+        referencedTranscriptPaths.add(normalizePathForLifecycleComparison(transcriptPath));
+      }
+    }
+
+    if (removedEntries === 0) {
+      restoreUnchangedSessionStoreCache(storePath, store);
+      return;
+    }
+
+    const referencedSessionIds = new Set(
+      Object.values(store)
+        .map((entry) => entry?.sessionId)
+        .filter((sessionId): sessionId is string => Boolean(sessionId)),
+    );
+    const { archiveSessionTranscripts } = await loadSessionArchiveRuntime();
+    // Removed entries carry concrete session ids/files, so archive their
+    // session-owned artifacts before persisting the row deletion.
+    for (const [sessionId, sessionFile] of removedSessionFiles) {
+      if (referencedSessionIds.has(sessionId)) {
+        continue;
+      }
+      archivedTranscriptArtifacts += archiveSessionTranscripts({
+        sessionId,
+        storePath,
+        sessionFile,
+        reason: "deleted",
+        restrictToStoreDir: true,
+      }).length;
+    }
+    const { removeRemovedSessionTrajectoryArtifacts } = await loadTrajectoryCleanupRuntime();
+    await removeRemovedSessionTrajectoryArtifacts({
+      removedSessionFiles,
+      referencedSessionIds,
+      storePath,
+      restrictToStoreDir: true,
+    });
+    await saveSessionStoreUnlocked(storePath, store, { skipMaintenance: true });
+  });
+
+  return {
+    removedEntries,
+    archivedTranscriptArtifacts:
+      archivedTranscriptArtifacts +
+      (await archiveUnreferencedLifecycleTranscriptArtifacts({
+        referencedTranscriptPaths,
+        storePath,
+        transcriptContentMarker,
+        orphanTranscriptMinAgeMs: params.orphanTranscriptMinAgeMs,
+        nowMs,
+      })),
+  };
 }
 
 export async function runQuotaSuspensionMaintenance(params: {
