@@ -1671,6 +1671,75 @@ describe("workboard controller", () => {
     expect(state.cards[0]).toMatchObject({ status: "running", position: 2000 });
   });
 
+  it("ignores stale lifecycle responses when dragged status changes while sync is in flight", async () => {
+    const host = {};
+    const state = getWorkboardState(host);
+    const linked = { ...sampleCard, sessionKey: sampleSession.key } satisfies WorkboardCard;
+    const moved = {
+      ...linked,
+      status: "running",
+      position: 2000,
+      updatedAt: 2,
+      events: [
+        {
+          id: "move-1",
+          kind: "moved",
+          at: 2,
+          fromStatus: "todo",
+          toStatus: "running",
+        },
+      ],
+    } satisfies WorkboardCard;
+    const staleLifecycleCard = {
+      ...linked,
+      status: "review",
+      updatedAt: 3,
+      metadata: { lifecycleStatusSourceUpdatedAt: 1 },
+    } satisfies WorkboardCard;
+    state.loaded = true;
+    state.cards = [linked];
+    const lifecycleResponse = createDeferred<{ card: WorkboardCard }>();
+    const client = createClient((method) => {
+      if (method === "workboard.cards.update") {
+        return lifecycleResponse.promise;
+      }
+      if (method === "workboard.cards.move") {
+        return { card: moved };
+      }
+      return {};
+    });
+
+    const syncing = syncWorkboardLifecycle({
+      host,
+      client: client as never,
+      sessions: [{ ...sampleSession, hasActiveRun: false, status: "done", updatedAt: 1 }],
+    });
+    await Promise.resolve();
+    await moveWorkboardCard({
+      host,
+      client: client as never,
+      cardId: "card-1",
+      status: "running",
+      position: 2000,
+    });
+    lifecycleResponse.resolve({ card: staleLifecycleCard });
+    await syncing;
+
+    expect(client.request).toHaveBeenCalledWith("workboard.cards.update", {
+      id: "card-1",
+      patch: expect.objectContaining({
+        status: "review",
+        metadata: { lifecycleStatusSourceUpdatedAt: 1 },
+      }),
+    });
+    expect(client.request).toHaveBeenCalledWith("workboard.cards.move", {
+      id: "card-1",
+      status: "running",
+      position: 2000,
+    });
+    expect(state.cards[0]).toMatchObject({ status: "running", position: 2000 });
+  });
+
   it("keeps non-status edits following newer linked session lifecycle sync", async () => {
     const host = {};
     const state = getWorkboardState(host);
