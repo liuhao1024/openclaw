@@ -70,7 +70,7 @@ export function createMessageActionDiscoveryContext(
 
 function logMessageActionError(params: {
   pluginId: string;
-  operation: "describeMessageTool";
+  operation: "describeMessageTool" | "schema";
   error: unknown;
 }) {
   const message = formatErrorMessage(params.error);
@@ -113,6 +113,42 @@ function normalizeToolSchemaContributions(
     return [];
   }
   return Array.isArray(value) ? value : [value];
+}
+
+function readSchemaContributionActions(params: {
+  pluginId: string;
+  contribution: ChannelMessageToolSchemaContribution;
+}): ChannelMessageActionName[] | null {
+  try {
+    if (!Object.hasOwn(params.contribution, "actions")) {
+      return null;
+    }
+    const actions = params.contribution.actions;
+    return Array.isArray(actions) ? actions : null;
+  } catch (error) {
+    logMessageActionError({
+      pluginId: params.pluginId,
+      operation: "schema",
+      error,
+    });
+    return null;
+  }
+}
+
+function readSchemaContributionProperties(params: {
+  pluginId: string;
+  contribution: ChannelMessageToolSchemaContribution;
+}): Record<string, TSchema> | undefined {
+  try {
+    return params.contribution.properties;
+  } catch (error) {
+    logMessageActionError({
+      pluginId: params.pluginId,
+      operation: "schema",
+      error,
+    });
+    return undefined;
+  }
 }
 
 type ResolvedChannelMessageActionDiscovery = {
@@ -257,11 +293,11 @@ export function listCrossChannelSchemaSupportedMessageActions(
     if ((contribution.visibility ?? "current-channel") !== "current-channel") {
       continue;
     }
-    if (!Object.hasOwn(contribution, "actions")) {
-      return [];
-    }
-    const actions = contribution.actions;
-    if (!Array.isArray(actions)) {
+    const actions = readSchemaContributionActions({
+      pluginId: pluginActions.pluginId,
+      contribution,
+    });
+    if (!actions) {
       return [];
     }
     if (actions.length === 0) {
@@ -309,14 +345,23 @@ export function listChannelMessageCapabilitiesForChannel(
 function mergeToolSchemaProperties(
   target: Record<string, TSchema>,
   source: Record<string, TSchema> | undefined,
+  pluginId: string,
 ) {
   if (!source) {
     return;
   }
-  for (const [name, schema] of Object.entries(source)) {
-    if (!(name in target)) {
-      target[name] = schema;
+  try {
+    for (const [name, schema] of Object.entries(source)) {
+      if (!(name in target)) {
+        target[name] = schema;
+      }
     }
+  } catch (error) {
+    logMessageActionError({
+      pluginId,
+      operation: "schema",
+      error,
+    });
   }
 }
 
@@ -342,11 +387,19 @@ export function resolveChannelMessageToolSchemaProperties(
       const visibility = contribution.visibility ?? "current-channel";
       if (currentChannel) {
         if (visibility === "all-configured" || plugin.id === currentChannel) {
-          mergeToolSchemaProperties(properties, contribution.properties);
+          mergeToolSchemaProperties(
+            properties,
+            readSchemaContributionProperties({ pluginId: plugin.id, contribution }),
+            plugin.id,
+          );
         }
         continue;
       }
-      mergeToolSchemaProperties(properties, contribution.properties);
+      mergeToolSchemaProperties(
+        properties,
+        readSchemaContributionProperties({ pluginId: plugin.id, contribution }),
+        plugin.id,
+      );
     }
   }
   if (currentChannel && !seenPluginIds.has(currentChannel)) {
@@ -360,7 +413,11 @@ export function resolveChannelMessageToolSchemaProperties(
       }).schemaContributions) {
         const visibility = contribution.visibility ?? "current-channel";
         if (visibility === "all-configured" || currentActions.pluginId === currentChannel) {
-          mergeToolSchemaProperties(properties, contribution.properties);
+          mergeToolSchemaProperties(
+            properties,
+            readSchemaContributionProperties({ pluginId: currentActions.pluginId, contribution }),
+            currentActions.pluginId,
+          );
         }
       }
     }

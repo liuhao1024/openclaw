@@ -193,6 +193,90 @@ describe("message action capability checks", () => {
     ).toHaveProperty("components");
   });
 
+  it("skips unreadable message tool schema properties without dropping healthy siblings", () => {
+    const unreadableProperties = new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw new Error("message action properties ownKeys exploded");
+        },
+      },
+    );
+    const schemaPlugin: ChannelPlugin = {
+      ...createChannelTestPluginBase({
+        id: "demo-schema",
+        label: "Demo Schema",
+        capabilities: { chatTypes: ["direct", "group"] },
+        config: {
+          listAccountIds: () => ["default"],
+        },
+      }),
+      actions: {
+        describeMessageTool: () => ({
+          actions: ["send"],
+          schema: [
+            {
+              properties: unreadableProperties,
+            },
+            {
+              properties: {
+                safeText: Type.Optional(Type.String()),
+              },
+            },
+          ],
+        }),
+      },
+    };
+    setActivePluginRegistry(
+      createTestRegistry([{ pluginId: "demo-schema", source: "test", plugin: schemaPlugin }]),
+    );
+
+    expect(
+      resolveChannelMessageToolSchemaProperties({
+        cfg: {} as OpenClawConfig,
+        channel: "demo-schema",
+      }),
+    ).toHaveProperty("safeText");
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats unreadable current-channel schema action lists as cross-channel blockers", () => {
+    const schemaPlugin: ChannelPlugin = {
+      ...createChannelTestPluginBase({
+        id: "demo-action-list",
+        label: "Demo Action List",
+        capabilities: { chatTypes: ["direct", "group"] },
+        config: {
+          listAccountIds: () => ["default"],
+        },
+      }),
+      actions: {
+        describeMessageTool: () => ({
+          actions: ["read", "unpin"],
+          schema: {
+            get actions(): never {
+              throw new Error("message action actions getter exploded");
+            },
+            properties: {
+              pinnedMessageId: Type.Optional(Type.String()),
+            },
+          },
+        }),
+      },
+    };
+    setActivePluginRegistry(
+      createTestRegistry([{ pluginId: "demo-action-list", source: "test", plugin: schemaPlugin }]),
+    );
+
+    expect(
+      listCrossChannelSchemaSupportedMessageActions({
+        cfg: {} as OpenClawConfig,
+        channel: "demo-action-list",
+      }),
+    ).toStrictEqual([]);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("filters only actions that depend on current-channel-only schema", () => {
     const scopedSchemaPlugin: ChannelPlugin = {
       ...createChannelTestPluginBase({
