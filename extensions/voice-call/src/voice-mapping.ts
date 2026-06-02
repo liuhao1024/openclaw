@@ -1,8 +1,6 @@
 import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/string-coerce-runtime";
 
-/**
- * Escape XML special characters for TwiML and other XML responses.
- */
+/** Escapes user/model text before embedding it in TwiML or provider XML responses. */
 export function escapeXml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -12,9 +10,7 @@ export function escapeXml(text: string): string {
     .replace(/'/g, "&apos;");
 }
 
-/**
- * Map of OpenAI voice names to similar Twilio Polly voices.
- */
+/** OpenAI voice aliases accepted by config and translated for Twilio's Polly-backed TTS. */
 const OPENAI_TO_POLLY_MAP: Record<string, string> = {
   alloy: "Polly.Joanna", // neutral, warm
   echo: "Polly.Matthew", // male, warm
@@ -24,17 +20,16 @@ const OPENAI_TO_POLLY_MAP: Record<string, string> = {
   shimmer: "Polly.Kimberly", // female, clear
 };
 
-/**
- * Default Polly voice when no mapping is found.
- */
+/** Stable fallback voice used when config omits a voice or names an unsupported OpenAI alias. */
 export const DEFAULT_POLLY_VOICE = "Polly.Joanna";
 
 /**
- * Map OpenAI voice names to Twilio Polly equivalents.
+ * Resolves config voice names to Twilio-compatible TTS voice ids.
+ *
  * OpenAI aliases are case-insensitive; Polly/Google provider voice ids pass through unchanged.
  *
- * @param voice - OpenAI voice name (alloy, echo, etc.) or Polly voice name
- * @returns Polly voice name suitable for Twilio TwiML
+ * @param voice - OpenAI voice alias, Twilio Polly voice id, Google voice id, or undefined.
+ * @returns TwiML voice id suitable for Twilio `<Say>`.
  */
 export function mapVoiceToPolly(voice: string | undefined): string {
   if (!voice) {
@@ -46,20 +41,16 @@ export function mapVoiceToPolly(voice: string | undefined): string {
     return voice;
   }
 
-  // Map OpenAI voices to Polly equivalents
+  // Unknown OpenAI-style names fall back instead of leaking unsupported voice ids to Twilio.
   return OPENAI_TO_POLLY_MAP[normalizeLowercaseStringOrEmpty(voice)] || DEFAULT_POLLY_VOICE;
 }
 
-/**
- * Check if a voice name is a known OpenAI voice.
- */
+/** Returns true only for the OpenAI aliases this plugin can translate for telephony TTS. */
 export function isOpenAiVoice(voice: string): boolean {
   return normalizeLowercaseStringOrEmpty(voice) in OPENAI_TO_POLLY_MAP;
 }
 
-/**
- * Get all supported OpenAI voice names.
- */
+/** Lists supported OpenAI aliases in config-display order. */
 export function getOpenAiVoiceNames(): string[] {
   return Object.keys(OPENAI_TO_POLLY_MAP);
 }
