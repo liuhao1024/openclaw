@@ -227,6 +227,7 @@ type FallbackRunnerParams = {
 };
 
 type EmbeddedAgentParams = {
+  suppressToolErrorDetails?: boolean;
   onBlockReply?: (payload: { text?: string; mediaUrls?: string[] }) => Promise<void> | void;
   onToolResult?: (payload: { text?: string; mediaUrls?: string[] }) => Promise<void> | void;
   onItemEvent?: (payload: {
@@ -1158,6 +1159,43 @@ describe("runAgentTurnWithFallback", () => {
     expect(fallbackCall.abortSignal).toBe(replyOperation.abortSignal);
     expect(fallbackCall.sessionId).toBe("session");
     expect(embeddedCall.abortSignal).toBe(replyOperation.abortSignal);
+  });
+
+  it("keeps tool error details enabled when the resolved verbose level is full", async () => {
+    let capturedParams: EmbeddedAgentParams | undefined;
+    state.runEmbeddedAgentMock.mockImplementationOnce(async (params: EmbeddedAgentParams) => {
+      capturedParams = params;
+      return { payloads: [{ text: "ok" }], meta: {} };
+    });
+
+    const runAgentTurnWithFallback = await getRunAgentTurnWithFallback();
+    await runAgentTurnWithFallback({
+      commandBody: "hello",
+      followupRun: createFollowupRun(),
+      sessionCtx: {
+        Provider: "discord",
+        ChatType: "channel",
+        MessageSid: "msg",
+      } as unknown as TemplateContext,
+      opts: {
+        suppressToolErrorDetails: true,
+      } satisfies GetReplyOptions,
+      typingSignals: createMockTypingSignaler(),
+      blockReplyPipeline: null,
+      blockStreamingEnabled: false,
+      resolvedBlockStreamingBreak: "message_end",
+      applyReplyToMode: (payload) => payload,
+      shouldEmitToolResult: () => true,
+      shouldEmitToolOutput: () => true,
+      pendingToolTasks: new Set(),
+      resetSessionAfterRoleOrderingConflict: async () => false,
+      isHeartbeat: false,
+      sessionKey: "main",
+      getActiveSessionEntry: () => undefined,
+      resolvedVerboseLevel: "full",
+    });
+
+    expect(capturedParams?.suppressToolErrorDetails).toBe(false);
   });
 
   it("rechecks queued auto fallback primary probes before running", async () => {

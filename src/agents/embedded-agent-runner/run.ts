@@ -2935,6 +2935,7 @@ export async function runEmbeddedAgent(
             thinkingLevel: params.thinkLevel,
             toolResultFormat: resolvedToolResultFormat,
             suppressToolErrorWarnings: params.suppressToolErrorWarnings,
+            suppressToolErrorDetails: params.suppressToolErrorDetails,
             inlineToolResultsAllowed: false,
             didSendViaMessagingTool: attempt.didSendViaMessagingTool,
             messagingToolSourceReplyPayloads: attempt.messagingToolSourceReplyPayloads,

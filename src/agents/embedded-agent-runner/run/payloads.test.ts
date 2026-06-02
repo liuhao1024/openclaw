@@ -476,6 +476,22 @@ describe("buildEmbeddedRunPayloads tool-error warnings", () => {
     });
   });
 
+  it("omits tool metadata and raw error details when detail suppression is enabled", () => {
+    const payloads = buildPayloads({
+      lastToolError: {
+        toolName: "exec",
+        meta: "rg secret-token src",
+        error: "Command failed with exit code 1",
+        mutatingAction: true,
+      },
+      suppressToolErrorDetails: true,
+      verboseLevel: "full",
+    });
+
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]?.text).toBe("⚠️ 🛠️ Exec failed");
+  });
+
   it("keeps stale full-verbose tool errors compact when live verbose is off", () => {
     const payloads = buildPayloads({
       lastToolError: { toolName: "write", error: "permission denied" },

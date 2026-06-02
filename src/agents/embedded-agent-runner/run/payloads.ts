@@ -45,6 +45,7 @@ type ToolMetaEntry = { toolName: string; meta?: string };
 type ToolErrorWarningPolicy = {
   showWarning: boolean;
   includeDetails: boolean;
+  includeToolMeta: boolean;
 };
 
 const RECOVERABLE_TOOL_ERROR_KEYWORDS = [
@@ -152,6 +153,7 @@ function resolveToolErrorWarningPolicy(params: {
   hasUserFacingFailureAcknowledgement: boolean;
   suppressToolErrors: boolean;
   suppressToolErrorWarnings?: boolean | (() => boolean | undefined);
+  suppressToolErrorDetails?: boolean;
   isCronTrigger?: boolean;
   sessionKey: string;
   verboseLevel?: VerboseLevel;
@@ -165,22 +167,26 @@ function resolveToolErrorWarningPolicy(params: {
   } else {
     toolErrorWarningOverride = params.suppressToolErrorWarnings;
   }
-  const includeDetails = shouldIncludeToolErrorDetails({
-    ...params,
-    verboseLevel: dynamicToolErrorWarningsDisabled ? "off" : params.verboseLevel,
-  });
+  const toolErrorDetailsSuppressed = params.suppressToolErrorDetails === true;
+  const includeDetails =
+    !toolErrorDetailsSuppressed &&
+    shouldIncludeToolErrorDetails({
+      ...params,
+      verboseLevel: dynamicToolErrorWarningsDisabled ? "off" : params.verboseLevel,
+    });
+  const includeToolMeta = !toolErrorDetailsSuppressed;
   const suppressToolErrorWarnings = toolErrorWarningOverride === true;
   if (suppressToolErrorWarnings) {
-    return { showWarning: false, includeDetails };
+    return { showWarning: false, includeDetails, includeToolMeta };
   }
   // sessions_send timeouts and errors are transient inter-session communication
   // issues — the message may still have been delivered. Suppress warnings to
   // prevent raw error text from leaking into the chat surface (#23989).
   if (normalizedToolName === "sessions_send") {
-    return { showWarning: false, includeDetails };
+    return { showWarning: false, includeDetails, includeToolMeta };
   }
   if (params.suppressToolErrors) {
-    return { showWarning: false, includeDetails };
+    return { showWarning: false, includeDetails, includeToolMeta };
   }
   const isMutatingToolError =
     params.lastToolError.mutatingAction ?? isLikelyMutatingToolName(params.lastToolError.toolName);
@@ -188,14 +194,16 @@ function resolveToolErrorWarningPolicy(params: {
     return {
       showWarning: !params.hasUserFacingErrorReply && !params.hasUserFacingFailureAcknowledgement,
       includeDetails,
+      includeToolMeta,
     };
   }
   if (isExecLikeToolName(params.lastToolError.toolName) && !includeDetails) {
-    return { showWarning: false, includeDetails };
+    return { showWarning: false, includeDetails, includeToolMeta };
   }
   return {
     showWarning: !params.hasUserFacingReply && !isRecoverableToolError(params.lastToolError.error),
     includeDetails,
+    includeToolMeta,
   };
 }
 
@@ -215,6 +223,7 @@ export function buildEmbeddedRunPayloads(params: {
   thinkingLevel?: ThinkLevel;
   toolResultFormat?: ToolResultFormat;
   suppressToolErrorWarnings?: boolean | (() => boolean | undefined);
+  suppressToolErrorDetails?: boolean;
   inlineToolResultsAllowed: boolean;
   didSendViaMessagingTool?: boolean;
   messagingToolSourceReplyPayloads?: MessagingToolSourceReplyPayload[];
@@ -502,6 +511,7 @@ export function buildEmbeddedRunPayloads(params: {
       hasUserFacingFailureAcknowledgement,
       suppressToolErrors: Boolean(params.config?.messages?.suppressToolErrors),
       suppressToolErrorWarnings: params.suppressToolErrorWarnings,
+      suppressToolErrorDetails: params.suppressToolErrorDetails,
       isCronTrigger: params.isCronTrigger,
       sessionKey: params.sessionKey,
       verboseLevel: params.verboseLevel,
@@ -512,7 +522,9 @@ export function buildEmbeddedRunPayloads(params: {
     if (warningPolicy.showWarning) {
       const toolSummary = formatToolAggregate(
         params.lastToolError.toolName,
-        params.lastToolError.meta ? [params.lastToolError.meta] : undefined,
+        warningPolicy.includeToolMeta && params.lastToolError.meta
+          ? [params.lastToolError.meta]
+          : undefined,
         { markdown: useMarkdown },
       );
       const errorSuffix =

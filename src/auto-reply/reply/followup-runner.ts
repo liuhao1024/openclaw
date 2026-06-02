@@ -19,6 +19,7 @@ import {
   buildAgentRuntimeDeliveryPlan,
   buildAgentRuntimeOutcomePlan,
 } from "../../agents/runtime-plan/build.js";
+import { normalizeChatType } from "../../channels/chat-type.js";
 import { updateSessionStore, type SessionEntry } from "../../config/sessions.js";
 import { readSessionEntry } from "../../config/sessions/store-load.js";
 import type { TypingMode } from "../../config/types.js";
@@ -478,6 +479,12 @@ export function createFollowupRunner(params: {
           observedVisibleToolErrorProgress = true;
         }
       };
+      const queuedChatType = normalizeChatType(effectiveQueued.originatingChatType);
+      const suppressChannelToolErrorDetails =
+        (queuedChatType === "group" || queuedChatType === "channel") &&
+        resolveCurrentVerboseLevel() !== "full";
+      const suppressToolErrorDetails =
+        opts?.suppressToolErrorDetails ?? suppressChannelToolErrorDetails;
       const shouldSuppressToolErrorWarnings = () => {
         if (opts?.suppressToolErrorWarnings !== undefined) {
           return opts.suppressToolErrorWarnings;
@@ -931,6 +938,7 @@ export function createFollowupRunner(params: {
                 verboseLevel: run.verboseLevel,
                 reasoningLevel: run.reasoningLevel,
                 suppressToolErrorWarnings: shouldSuppressToolErrorWarnings,
+                suppressToolErrorDetails,
                 execOverrides: run.execOverrides,
                 bashElevated: run.bashElevated,
                 timeoutMs: run.timeoutMs,
