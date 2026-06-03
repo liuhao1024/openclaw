@@ -160,7 +160,8 @@ function resolveGroupTargets(group, exactExcludePaths, forceFileTargets = false)
 }
 
 function resolveGroupTargetChunkSize(group, env) {
-  const override = parsePositiveInt(env[TARGET_CHUNK_SIZE_ENV_KEY]);
+  const rawOverride = env[TARGET_CHUNK_SIZE_ENV_KEY]?.trim();
+  const override = rawOverride ? parsePositiveInt(rawOverride, TARGET_CHUNK_SIZE_ENV_KEY) : null;
   if (override !== null) {
     return override;
   }

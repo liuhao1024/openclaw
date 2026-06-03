@@ -742,6 +742,32 @@ describe("scripts/test-extension.mjs", () => {
     expect(runParams.targets).toContain("extensions/codex/src/app-server/client.test.ts");
   });
 
+  it("runs extension batch groups without an optional target chunk size override", async () => {
+    const runGroup = vi.fn<() => Promise<number>>().mockResolvedValue(0);
+    const result = await runExtensionBatchPlan(
+      {
+        extensionCount: 1,
+        extensionIds: ["firecrawl"],
+        estimatedCost: 1,
+        hasTests: true,
+        planGroups: [
+          {
+            config: "test/vitest/vitest.extensions.config.ts",
+            estimatedCost: 1,
+            extensionIds: ["firecrawl"],
+            roots: [bundledPluginRoot("firecrawl")],
+            testFileCount: 1,
+          },
+        ],
+        testFileCount: 1,
+      },
+      { runGroup },
+    );
+
+    expect(result).toBe(0);
+    expect(runGroup).toHaveBeenCalledOnce();
+  });
+
   it("chunks large extension batch groups into separate Vitest processes", async () => {
     const runGroup = vi.fn<() => Promise<number>>().mockResolvedValue(0);
     const result = await runExtensionBatchPlan(
