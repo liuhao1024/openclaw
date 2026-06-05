@@ -50,7 +50,7 @@ export function toError(error: unknown): Error {
   try {
     return new Error(JSON.stringify(error));
   } catch {
-    return new Error(String(error));
+    return new Error("Unknown thrown value");
   }
 }
 
