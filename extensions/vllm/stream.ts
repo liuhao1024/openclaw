@@ -23,23 +23,81 @@ function resolveVllmQwenThinkingFormat(
   return resolveVllmQwenThinkingFormatFromCompat(ctx.model?.compat);
 }
 
-function setQwenChatTemplateThinking(payload: Record<string, unknown>, enabled: boolean): void {
-  const existing = payload.chat_template_kwargs;
-  if (existing && typeof existing === "object" && !Array.isArray(existing)) {
-    const next: Record<string, unknown> = {
-      ...(existing as Record<string, unknown>),
-      enable_thinking: enabled,
-    };
-    if (!Object.hasOwn(next, "preserve_thinking")) {
-      next.preserve_thinking = true;
-    }
-    payload.chat_template_kwargs = next;
-    return;
+type PayloadFieldRead = { ok: true; value: unknown } | { ok: false };
+
+function readPayloadField(record: Record<string, unknown>, key: string): PayloadFieldRead {
+  try {
+    return { ok: true, value: record[key] };
+  } catch {
+    return { ok: false };
   }
-  payload.chat_template_kwargs = {
-    enable_thinking: enabled,
-    preserve_thinking: true,
-  };
+}
+
+function forcePayloadField(record: Record<string, unknown>, key: string, value: unknown): boolean {
+  try {
+    Object.defineProperty(record, key, {
+      configurable: true,
+      enumerable: true,
+      value,
+      writable: true,
+    });
+    const next = readPayloadField(record, key);
+    return next.ok && next.value === value;
+  } catch {
+    return false;
+  }
+}
+
+function deletePayloadField(record: Record<string, unknown>, key: string): boolean {
+  try {
+    delete record[key];
+    return !Object.hasOwn(record, key);
+  } catch {
+    return false;
+  }
+}
+
+function removeVllmPayloadField(payload: Record<string, unknown>, key: string): void {
+  if (!deletePayloadField(payload, key)) {
+    throw new Error(`vLLM payload field could not be removed: ${key}`);
+  }
+}
+
+function copyPlainDataFields(value: Record<string, unknown>): Record<string, unknown> {
+  const copy: Record<string, unknown> = {};
+  for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+    if (descriptor.enumerable && "value" in descriptor) {
+      Object.defineProperty(copy, key, {
+        configurable: true,
+        enumerable: true,
+        value: descriptor.value,
+        writable: true,
+      });
+    }
+  }
+  return copy;
+}
+
+function setQwenChatTemplateThinking(payload: Record<string, unknown>, enabled: boolean): void {
+  const existing = readPayloadField(payload, "chat_template_kwargs");
+  let next: Record<string, unknown>;
+  if (
+    existing.ok &&
+    existing.value &&
+    typeof existing.value === "object" &&
+    !Array.isArray(existing.value)
+  ) {
+    next = copyPlainDataFields(existing.value as Record<string, unknown>);
+  } else {
+    next = {};
+  }
+  next.enable_thinking = enabled;
+  if (!Object.hasOwn(next, "preserve_thinking")) {
+    next.preserve_thinking = true;
+  }
+  if (!forcePayloadField(payload, "chat_template_kwargs", next)) {
+    throw new Error("vLLM Qwen chat template payload patch failed");
+  }
 }
 
 function isVllmNemotronModel(model: { api?: unknown; provider?: unknown; id?: unknown }): boolean {
@@ -57,14 +115,20 @@ function setNemotronThinkingOffChatTemplateKwargs(payload: Record<string, unknow
     enable_thinking: false,
     force_nonempty_content: true,
   };
-  const existing = payload.chat_template_kwargs;
-  payload.chat_template_kwargs =
-    existing && typeof existing === "object" && !Array.isArray(existing)
+  const existing = readPayloadField(payload, "chat_template_kwargs");
+  const next =
+    existing.ok &&
+    existing.value &&
+    typeof existing.value === "object" &&
+    !Array.isArray(existing.value)
       ? {
           ...defaults,
-          ...(existing as Record<string, unknown>),
+          ...copyPlainDataFields(existing.value as Record<string, unknown>),
         }
       : defaults;
+  if (!forcePayloadField(payload, "chat_template_kwargs", next)) {
+    throw new Error("vLLM Nemotron chat template payload patch failed");
+  }
 }
 
 export function createVllmQwenThinkingWrapper(params: {
@@ -81,12 +145,13 @@ export function createVllmQwenThinkingWrapper(params: {
       });
       if (params.format === "chat-template") {
         setQwenChatTemplateThinking(payloadObj, enableThinking);
-      } else {
-        payloadObj.enable_thinking = enableThinking;
+        removeVllmPayloadField(payloadObj, "enable_thinking");
+      } else if (!forcePayloadField(payloadObj, "enable_thinking", enableThinking)) {
+        throw new Error("vLLM enable_thinking payload patch failed");
       }
-      delete payloadObj.reasoning_effort;
-      delete payloadObj.reasoningEffort;
-      delete payloadObj.reasoning;
+      removeVllmPayloadField(payloadObj, "reasoning_effort");
+      removeVllmPayloadField(payloadObj, "reasoningEffort");
+      removeVllmPayloadField(payloadObj, "reasoning");
     },
     {
       shouldPatch: ({ model }) => model.api === "openai-completions" && (model.reasoning ?? true),

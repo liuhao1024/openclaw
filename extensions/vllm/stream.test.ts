@@ -43,6 +43,36 @@ function capturePayload(params: {
   return captured;
 }
 
+function patchQwenPayload(params: {
+  format: "chat-template" | "top-level";
+  payload: Record<string, unknown>;
+  thinkingLevel?: "off" | "low" | "medium" | "high" | "xhigh" | "max";
+  reasoning?: unknown;
+}): Record<string, unknown> {
+  const baseStreamFn: StreamFn = (_model, _context, options) => {
+    options?.onPayload?.(params.payload, _model);
+    return {} as ReturnType<StreamFn>;
+  };
+
+  const wrapped = createVllmQwenThinkingWrapper({
+    baseStreamFn,
+    format: params.format,
+    thinkingLevel: params.thinkingLevel ?? "high",
+  });
+  void wrapped(
+    {
+      api: "openai-completions",
+      provider: "vllm",
+      id: "Qwen/Qwen3-8B",
+      reasoning: true,
+    } as Model<"openai-completions">,
+    { messages: [] } as Context,
+    params.reasoning === undefined ? {} : ({ reasoning: params.reasoning } as never),
+  );
+
+  return params.payload;
+}
+
 describe("createVllmQwenThinkingWrapper", () => {
   it("maps Qwen chat-template thinking off to chat_template_kwargs", () => {
     const payload = capturePayload({
@@ -54,6 +84,34 @@ describe("createVllmQwenThinkingWrapper", () => {
         reasoningEffort: "high",
       },
     });
+
+    expect(payload).toEqual({
+      chat_template_kwargs: {
+        enable_thinking: false,
+        preserve_thinking: true,
+      },
+    });
+  });
+
+  it("replaces unreadable Qwen chat-template kwargs without crashing", () => {
+    const payload: Record<string, unknown> = {
+      enable_thinking: true,
+      reasoning_effort: "high",
+    };
+    Object.defineProperty(payload, "chat_template_kwargs", {
+      configurable: true,
+      get() {
+        throw new Error("chat_template_kwargs getter failed");
+      },
+    });
+
+    expect(() =>
+      patchQwenPayload({
+        format: "chat-template",
+        payload,
+        thinkingLevel: "off",
+      }),
+    ).not.toThrow();
 
     expect(payload).toEqual({
       chat_template_kwargs: {
@@ -93,6 +151,42 @@ describe("createVllmQwenThinkingWrapper", () => {
     });
   });
 
+  it("copies only enumerable chat-template kwargs data fields", () => {
+    const existing: Record<string, unknown> = {
+      preserve_thinking: false,
+    };
+    Object.defineProperty(existing, "hidden", {
+      enumerable: false,
+      value: "not serialized",
+    });
+    Object.defineProperty(existing, "__proto__", {
+      configurable: true,
+      enumerable: true,
+      value: "literal proto key",
+      writable: true,
+    });
+
+    const payload = patchQwenPayload({
+      format: "chat-template",
+      payload: {
+        chat_template_kwargs: existing,
+      },
+      thinkingLevel: "off",
+    });
+    const next = payload.chat_template_kwargs as Record<string, unknown>;
+
+    expect(Object.hasOwn(next, "hidden")).toBe(false);
+    expect(Object.getPrototypeOf(next)).toBe(Object.prototype);
+    expect(Object.getOwnPropertyDescriptor(next, "__proto__")).toMatchObject({
+      enumerable: true,
+      value: "literal proto key",
+    });
+    expect(next).toMatchObject({
+      enable_thinking: false,
+      preserve_thinking: false,
+    });
+  });
+
   it("maps Qwen top-level thinking format to enable_thinking", () => {
     expect(capturePayload({ format: "top-level", thinkingLevel: "off" })).toEqual({
       enable_thinking: false,
@@ -100,6 +194,46 @@ describe("createVllmQwenThinkingWrapper", () => {
     expect(capturePayload({ format: "top-level", thinkingLevel: "high" })).toEqual({
       enable_thinking: true,
     });
+  });
+
+  it("overwrites hostile configurable top-level enable_thinking fields", () => {
+    const payload: Record<string, unknown> = {
+      reasoning_effort: "high",
+      reasoning: { effort: "high" },
+      reasoningEffort: "high",
+    };
+    Object.defineProperty(payload, "enable_thinking", {
+      configurable: true,
+      get() {
+        throw new Error("enable_thinking getter failed");
+      },
+    });
+
+    expect(() =>
+      patchQwenPayload({
+        format: "top-level",
+        payload,
+        thinkingLevel: "off",
+      }),
+    ).not.toThrow();
+
+    expect(payload).toEqual({ enable_thinking: false });
+  });
+
+  it("fails closed when unsupported vLLM payload fields cannot be removed", () => {
+    const payload: Record<string, unknown> = { enable_thinking: true };
+    Object.defineProperty(payload, "reasoning", {
+      configurable: false,
+      value: { effort: "high" },
+    });
+
+    expect(() =>
+      patchQwenPayload({
+        format: "top-level",
+        payload,
+        thinkingLevel: "off",
+      }),
+    ).toThrow("vLLM payload field could not be removed: reasoning");
   });
 
   it("patches configured Qwen models unless reasoning is explicitly disabled", () => {
@@ -180,6 +314,45 @@ describe("createVllmProviderThinkingWrapper", () => {
     ).toEqual({
       chat_template_kwargs: {
         enable_thinking: true,
+        force_nonempty_content: true,
+      },
+    });
+  });
+
+  it("replaces unreadable Nemotron 3 chat-template kwargs without crashing", () => {
+    const payload: Record<string, unknown> = {};
+    Object.defineProperty(payload, "chat_template_kwargs", {
+      configurable: true,
+      get() {
+        throw new Error("chat_template_kwargs getter failed");
+      },
+    });
+    const baseStreamFn: StreamFn = (_model, _context, options) => {
+      options?.onPayload?.(payload, _model);
+      return {} as ReturnType<StreamFn>;
+    };
+
+    const wrapped = createVllmProviderThinkingWrapper({
+      baseStreamFn,
+      thinkingLevel: "off",
+    });
+
+    expect(() =>
+      wrapped(
+        {
+          api: "openai-completions",
+          provider: "vllm",
+          id: "nemotron-3-super",
+          reasoning: true,
+        } as Model<"openai-completions">,
+        { messages: [] } as Context,
+        {},
+      ),
+    ).not.toThrow();
+
+    expect(payload).toEqual({
+      chat_template_kwargs: {
+        enable_thinking: false,
         force_nonempty_content: true,
       },
     });
