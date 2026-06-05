@@ -2135,6 +2135,31 @@ function createOpenAIResponsesClient(
   });
 }
 
+function readOpenAITransportOutputApi(model: Model, fallback: Api): Api {
+  try {
+    const value = model.api;
+    return typeof value === "string" && value.length > 0 ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function readOpenAITransportOutputString(model: Model, key: "id" | "provider"): string {
+  try {
+    const value = model[key];
+    return typeof value === "string" && value.length > 0 ? value : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+function formatOpenAITransportModelIdentity(model: Model): string {
+  const provider = readOpenAITransportOutputString(model, "provider");
+  const api = readOpenAITransportOutputApi(model, "unknown" as Api);
+  const modelId = readOpenAITransportOutputString(model, "id");
+  return `provider=${provider} api=${api} model=${modelId}`;
+}
+
 export function createOpenAIResponsesTransportStreamFn(): StreamFn {
   return (model, context, options) => {
     const responsesOptions = options as OpenAIResponsesOptions | undefined;
@@ -2144,9 +2169,9 @@ export function createOpenAIResponsesTransportStreamFn(): StreamFn {
       const output: MutableAssistantOutput = {
         role: "assistant" as const,
         content: [],
-        api: model.api,
-        provider: model.provider,
-        model: model.id,
+        api: readOpenAITransportOutputApi(model, "unknown" as Api),
+        provider: readOpenAITransportOutputString(model, "provider"),
+        model: readOpenAITransportOutputString(model, "id"),
         usage: {
           input: 0,
           output: 0,
@@ -2235,7 +2260,7 @@ export function createOpenAIResponsesTransportStreamFn(): StreamFn {
         stream.end();
       } catch (error) {
         log.warn(
-          `[responses] error provider=${model.provider} api=${model.api} model=${model.id} ` +
+          `[responses] error ${formatOpenAITransportModelIdentity(model)} ` +
             summarizeOpenAITransportError(error),
         );
         assignTransportErrorDetails(output, error, options?.signal);
@@ -2647,8 +2672,8 @@ export function createAzureOpenAIResponsesTransportStreamFn(): StreamFn {
         role: "assistant" as const,
         content: [],
         api: "azure-openai-responses",
-        provider: model.provider,
-        model: model.id,
+        provider: readOpenAITransportOutputString(model, "provider"),
+        model: readOpenAITransportOutputString(model, "id"),
         usage: {
           input: 0,
           output: 0,
@@ -2736,7 +2761,7 @@ export function createAzureOpenAIResponsesTransportStreamFn(): StreamFn {
         stream.end();
       } catch (error) {
         log.warn(
-          `[responses] error provider=${model.provider} api=${model.api} model=${model.id} ` +
+          `[responses] error ${formatOpenAITransportModelIdentity(model)} ` +
             summarizeOpenAITransportError(error),
         );
         assignTransportErrorDetails(output, error, options?.signal);
@@ -2893,9 +2918,9 @@ export function createOpenAICompletionsTransportStreamFn(): StreamFn {
       const output: MutableAssistantOutput = {
         role: "assistant" as const,
         content: [],
-        api: model.api,
-        provider: model.provider,
-        model: model.id,
+        api: readOpenAITransportOutputApi(model, "openai-completions" as Api),
+        provider: readOpenAITransportOutputString(model, "provider"),
+        model: readOpenAITransportOutputString(model, "id"),
         usage: {
           input: 0,
           output: 0,

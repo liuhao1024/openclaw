@@ -5,7 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildOpenAIResponsesParams,
   buildOpenAICompletionsParams,
+  createAzureOpenAIResponsesTransportStreamFn,
   createOpenAICompletionsTransportStreamFn,
+  createOpenAIResponsesTransportStreamFn,
   parseTransportChunkUsage,
   resolveAzureOpenAIApiVersion,
   sanitizeTransportPayloadText,
@@ -141,6 +143,42 @@ function createUnreadableToolSchema(): Record<string, unknown> {
     },
   });
   return schema;
+}
+
+function createUnreadableIdentityModel<TApi extends Api>(api: TApi): Model<TApi> {
+  const model = {
+    id: `${api}-model`,
+    name: `${api} model`,
+    api,
+    provider: `${api}-provider`,
+    baseUrl: "https://example.invalid/v1",
+    reasoning: true,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128_000,
+    maxTokens: 8192,
+  } satisfies Model<TApi>;
+  Object.defineProperties(model, {
+    api: {
+      enumerable: true,
+      get() {
+        throw new Error(`revoked ${api} api`);
+      },
+    },
+    provider: {
+      enumerable: true,
+      get() {
+        throw new Error(`revoked ${api} provider`);
+      },
+    },
+    id: {
+      enumerable: true,
+      get() {
+        throw new Error(`revoked ${api} model id`);
+      },
+    },
+  });
+  return model;
 }
 
 function createToolSchemaWithProtoProperty(): Record<string, unknown> {
@@ -1055,6 +1093,47 @@ describe("openai transport stream", () => {
         undefined,
       ),
     ).toBeUndefined();
+  });
+
+  it("keeps unreadable OpenAI transport output identity inside the stream error path", async () => {
+    const context = {
+      messages: [{ role: "user", content: "hello", timestamp: 0 }],
+      tools: [],
+    } as never;
+    const cases = [
+      {
+        api: "openai-responses" as const,
+        expectedApi: "unknown",
+        streamFn: createOpenAIResponsesTransportStreamFn(),
+      },
+      {
+        api: "azure-openai-responses" as const,
+        expectedApi: "azure-openai-responses",
+        streamFn: createAzureOpenAIResponsesTransportStreamFn(),
+      },
+      {
+        api: "openai-completions" as const,
+        expectedApi: "openai-completions",
+        streamFn: createOpenAICompletionsTransportStreamFn(),
+      },
+    ];
+
+    for (const testCase of cases) {
+      const onPayload = vi.fn();
+      const stream = testCase.streamFn(createUnreadableIdentityModel(testCase.api), context, {
+        apiKey: "test-key",
+        onPayload,
+      } as never);
+
+      const result = await stream.result();
+
+      expect(result.stopReason).toBe("error");
+      expect(result.api).toBe(testCase.expectedApi);
+      expect(result.provider).toBe("unknown");
+      expect(result.model).toBe("unknown");
+      expect(String(result.errorMessage)).toContain("revoked");
+      expect(onPayload).not.toHaveBeenCalled();
+    }
   });
 
   it("streams OpenAI-compatible loopback requests with the configured SDK timeout", async () => {
