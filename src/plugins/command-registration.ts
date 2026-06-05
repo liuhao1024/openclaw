@@ -375,7 +375,7 @@ function copyAgentPromptGuidance(
   return { ok: true, value: guidance };
 }
 
-function snapshotPluginCommandDefinition(
+export function snapshotPluginCommandDefinition(
   command: OpenClawPluginCommandDefinition,
 ): CommandSnapshotResult {
   if (!isRecord(command)) {

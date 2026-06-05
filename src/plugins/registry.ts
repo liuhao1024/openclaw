@@ -65,6 +65,7 @@ import type { CodexAppServerExtensionFactory } from "./codex-app-server-extensio
 import {
   isReservedCommandName,
   registerPluginCommand,
+  snapshotPluginCommandDefinition,
   validatePluginCommandDefinition,
 } from "./command-registration.js";
 import { clearPluginCommandsForPlugin, pluginCommands } from "./command-registry-state.js";
@@ -2008,7 +2009,18 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
   };
 
   const registerCommand = (record: PluginRecord, command: OpenClawPluginCommandDefinition) => {
-    const name = command.name.trim();
+    const snapshot = snapshotPluginCommandDefinition(command);
+    if (!snapshot.ok) {
+      pushDiagnostic({
+        level: "error",
+        pluginId: record.id,
+        source: record.source,
+        message: `command registration failed: ${snapshot.error}`,
+      });
+      return;
+    }
+    const commandSnapshot = snapshot.command;
+    const name = commandSnapshot.name.trim();
     if (!name) {
       pushDiagnostic({
         level: "error",
@@ -2018,7 +2030,7 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
       });
       return;
     }
-    const allowReservedCommandNames = command.ownership === "reserved";
+    const allowReservedCommandNames = commandSnapshot.ownership === "reserved";
     if (allowReservedCommandNames && !canClaimReservedCommandOwnership(record)) {
       pushDiagnostic({
         level: "error",
@@ -2054,7 +2066,7 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
     // snapshot registries are isolated and never write to the global command table. Conflicts
     // will surface when the plugin is loaded via the normal activation path at gateway startup.
     if (!registryParams.activateGlobalSideEffects) {
-      const validationError = validatePluginCommandDefinition(command, {
+      const validationError = validatePluginCommandDefinition(commandSnapshot, {
         allowReservedCommandNames,
       });
       if (validationError) {
@@ -2067,11 +2079,11 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
         return;
       }
     } else {
-      const { ownership: _ownership, ...commandForRegistration } = command;
+      const { ownership: _ownership, ...commandForRegistration } = commandSnapshot;
       void _ownership;
       const result = registerPluginCommand(
         record.id,
-        allowReservedCommandNames ? commandForRegistration : command,
+        allowReservedCommandNames ? commandForRegistration : commandSnapshot,
         {
           pluginName: record.name,
           pluginRoot: record.rootDir,
@@ -2100,7 +2112,7 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
     registry.commands.push({
       pluginId: record.id,
       pluginName: record.name,
-      command,
+      command: commandSnapshot,
       source: record.source,
       rootDir: record.rootDir,
     });
