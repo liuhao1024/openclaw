@@ -1,6 +1,6 @@
 // Shared model utility tests cover provider-agnostic thinking metadata handling.
 import { describe, expect, it } from "vitest";
-import { clampThinkingLevel, getSupportedThinkingLevels } from "./model-utils.js";
+import { clampThinkingLevel, getSupportedThinkingLevels, modelsAreEqual } from "./model-utils.js";
 import type { Model } from "./types.js";
 
 const baseModel = {
@@ -77,5 +77,50 @@ describe("thinking level metadata", () => {
 
     expect(getSupportedThinkingLevels(model)).toContain("max");
     expect(getSupportedThinkingLevels(model)).not.toContain("xhigh");
+  });
+});
+
+describe("model identity metadata", () => {
+  it("treats unreadable model identity as unequal", () => {
+    const hostile = Object.defineProperties(
+      { ...baseModel },
+      {
+        id: {
+          get() {
+            throw new Error("id getter should be caught");
+          },
+        },
+        provider: {
+          get() {
+            throw new Error("provider getter should be caught");
+          },
+        },
+      },
+    ) as Model<"openai-responses">;
+
+    expect(modelsAreEqual(hostile, baseModel)).toBe(false);
+    expect(modelsAreEqual(baseModel, hostile)).toBe(false);
+    expect(modelsAreEqual(hostile, hostile)).toBe(false);
+  });
+
+  it("preserves readable accessor-backed model identity", () => {
+    const accessorModel = Object.defineProperties(
+      { ...baseModel },
+      {
+        id: {
+          get() {
+            return "reasoning-model";
+          },
+        },
+        provider: {
+          get() {
+            return "openai";
+          },
+        },
+      },
+    ) as Model<"openai-responses">;
+
+    expect(modelsAreEqual(accessorModel, baseModel)).toBe(true);
+    expect(modelsAreEqual(accessorModel, { ...baseModel, id: "other-model" })).toBe(false);
   });
 });

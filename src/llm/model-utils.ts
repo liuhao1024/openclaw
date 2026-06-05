@@ -43,6 +43,11 @@ function readModelField<TApi extends Api>(model: Model<TApi>, key: string): unkn
   return readObjectField(model, key);
 }
 
+function readModelStringField<TApi extends Api>(model: Model<TApi>, key: string): string {
+  const value = readModelField(model, key);
+  return typeof value === "string" ? value : "";
+}
+
 function readThinkingLevelMapValue<TApi extends Api>(
   model: Model<TApi>,
   level: ModelThinkingLevel,
@@ -109,5 +114,9 @@ export function modelsAreEqual<TApi extends Api>(
   if (!a || !b) {
     return false;
   }
-  return a.id === b.id && a.provider === b.provider;
+  const aId = readModelStringField(a, "id");
+  const bId = readModelStringField(b, "id");
+  const aProvider = readModelStringField(a, "provider");
+  const bProvider = readModelStringField(b, "provider");
+  return aId !== "" && aProvider !== "" && aId === bId && aProvider === bProvider;
 }
