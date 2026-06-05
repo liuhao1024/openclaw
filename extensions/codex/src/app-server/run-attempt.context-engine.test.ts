@@ -13,7 +13,10 @@ import { registerSandboxBackend } from "openclaw/plugin-sdk/sandbox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CodexAppServerClientFactory } from "./client-factory.js";
 import type { CodexServerNotification } from "./protocol.js";
-import { runCodexAppServerAttempt as runCodexAppServerAttemptImpl } from "./run-attempt.js";
+import {
+  __testing as runAttemptTesting,
+  runCodexAppServerAttempt as runCodexAppServerAttemptImpl,
+} from "./run-attempt.js";
 import { readCodexAppServerBinding, writeCodexAppServerBinding } from "./session-binding.js";
 import { createCodexTestModel } from "./test-support.js";
 
@@ -313,6 +316,21 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
     resetCodexAppServerClientFactoryForTest();
     vi.restoreAllMocks();
     await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("builds context-engine available tools without trusting tool names", () => {
+    const unreadableTool = {
+      get name(): string {
+        throw new Error("name exploded");
+      },
+    };
+
+    expect(
+      runAttemptTesting.buildCodexContextEngineAvailableTools([
+        unreadableTool,
+        { name: "message" },
+      ]),
+    ).toEqual(new Set(["message"]));
   });
 
   it("bootstraps and assembles non-legacy context before the Codex turn starts", async () => {

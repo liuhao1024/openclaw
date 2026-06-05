@@ -166,6 +166,7 @@ import {
 } from "./dynamic-tool-execution.js";
 import {
   filterCodexDynamicTools,
+  readCodexDynamicToolName,
   resolveCodexDynamicToolsLoadingForModel,
 } from "./dynamic-tool-profile.js";
 import { createCodexDynamicToolBridge } from "./dynamic-tools.js";
@@ -714,9 +715,7 @@ export async function runCodexAppServerAttempt(
       sessionKey: contextSessionKey,
       messages: historyMessages,
       tokenBudget: params.contextTokenBudget,
-      availableTools: new Set(
-        toolBridge.availableSpecs.map((tool) => tool.name).filter(isNonEmptyString),
-      ),
+      availableTools: buildCodexContextEngineAvailableTools(toolBridge.availableSpecs),
       citationsMode: params.config?.memory?.citations,
       modelId: params.modelId,
       prompt: params.prompt,
@@ -2588,6 +2587,10 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
+function buildCodexContextEngineAvailableTools(tools: readonly { name?: unknown }[]): Set<string> {
+  return new Set(tools.map(readCodexDynamicToolName).filter(isNonEmptyString));
+}
+
 function canAttributeUnscopedNativeResponseDeltaToThisTurn(client: CodexAppServerClient): boolean {
   const activeLeases = client.getActiveSharedLeaseCountForUnscopedNotifications?.();
   return activeLeases === undefined || activeLeases <= 1;
@@ -2668,6 +2671,7 @@ function handleApprovalRequest(params: {
 
 export const testing = {
   buildCodexNativeHookRelayId,
+  buildCodexContextEngineAvailableTools,
   buildDeveloperInstructions,
   filterCodexDynamicTools,
   buildDynamicTools,
