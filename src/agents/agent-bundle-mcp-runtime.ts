@@ -233,6 +233,14 @@ function stringifyMcpRuntimeError(error: unknown): string {
   }
 }
 
+function readMcpRuntimeErrorField(error: unknown, key: string): unknown {
+  try {
+    return isMcpConfigRecord(error) ? error[key] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function redactErrorUrls(error: unknown): string {
   return redactSensitiveUrlLikeString(stringifyMcpRuntimeError(error));
 }
@@ -249,16 +257,8 @@ async function listAllTools(client: Client, timeoutMs: number) {
   return tools;
 }
 
-function readMcpRuntimeErrorCode(error: unknown): unknown {
-  try {
-    return isMcpConfigRecord(error) ? error.code : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 export function isMcpMethodNotFoundError(error: unknown): boolean {
-  if (readMcpRuntimeErrorCode(error) === ErrorCode.MethodNotFound) {
+  if (readMcpRuntimeErrorField(error, "code") === ErrorCode.MethodNotFound) {
     return true;
   }
   const message = stringifyMcpRuntimeError(error);
@@ -1244,16 +1244,24 @@ export const testing = {
 };
 export { testing as __testing };
 
-function toLintErrorObject(value: unknown, fallbackMessage: string): Error {
-  if (value instanceof Error) {
-    return value;
+export function toLintErrorObject(value: unknown, fallbackMessage: string): Error {
+  const message = readMcpRuntimeErrorField(value, "message");
+  if (typeof message === "string" && message.trim()) {
+    return new Error(message);
+  }
+  const name = readMcpRuntimeErrorField(value, "name");
+  if (typeof name === "string" && name.trim()) {
+    return new Error(name);
+  }
+  try {
+    if (value instanceof Error) {
+      return value;
+    }
+  } catch {
+    return new Error(fallbackMessage);
   }
   if (typeof value === "string") {
     return new Error(value);
   }
-  const error = new Error(fallbackMessage, { cause: value });
-  if ((typeof value === "object" && value !== null) || typeof value === "function") {
-    Object.assign(error, value);
-  }
-  return error;
+  return new Error(fallbackMessage, { cause: value });
 }

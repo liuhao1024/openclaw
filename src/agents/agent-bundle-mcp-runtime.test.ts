@@ -8,6 +8,7 @@ import {
   createBundleMcpJsonSchemaValidator,
   isMcpMethodNotFoundError,
   snapshotListedMcpToolsForCatalog,
+  toLintErrorObject,
 } from "./agent-bundle-mcp-runtime.js";
 import { cleanupBundleMcpHarness } from "./agent-bundle-mcp-test-harness.js";
 import {
@@ -361,6 +362,38 @@ describe("isMcpMethodNotFoundError", () => {
     expect(isMcpMethodNotFoundError("MCP method not found")).toBe(true);
     expect(isMcpMethodNotFoundError(hostileError)).toBe(false);
     expect(isMcpMethodNotFoundError(hostileStringError)).toBe(false);
+  });
+});
+
+describe("toLintErrorObject", () => {
+  it("normalizes hostile MCP connection rejections without touching proxy internals", () => {
+    const hostileError = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error("property denied");
+        },
+        getPrototypeOf() {
+          throw new Error("prototype denied");
+        },
+        ownKeys() {
+          throw new Error("keys denied");
+        },
+      },
+    );
+    const readableMessage = {};
+    Object.defineProperty(readableMessage, "message", {
+      get() {
+        return "connect failed";
+      },
+    });
+
+    expect(toLintErrorObject(hostileError, "Non-Error rejection").message).toBe(
+      "Non-Error rejection",
+    );
+    expect(toLintErrorObject(readableMessage, "Non-Error rejection").message).toBe(
+      "connect failed",
+    );
   });
 });
 
