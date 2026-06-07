@@ -313,8 +313,9 @@ function classifySessionTranscriptFromSessionStore(absPath: string): {
 // chat inject, command exec, and `.reset.`/`.deleted.` archive rotation) emits
 // `onSessionTranscriptUpdate`, which drops the affected directory's snapshot.
 // The TTL is only a backstop for writers that never reach our event bus, such
-// as another node sharing the NFS sessions dir or low-frequency archive prunes.
-const SESSION_FILES_LISTING_TTL_MS = 5_000;
+// as another node sharing the NFS sessions dir or low-frequency archive prunes;
+// 1s keeps that eventual-consistency window tight.
+const SESSION_FILES_LISTING_TTL_MS = 1_000;
 // Bound the snapshot map so a process that touches many agents cannot grow it
 // without limit; agents are few in practice, so eviction is rare.
 const SESSION_FILES_LISTING_MAX_DIRS = 64;
@@ -413,11 +414,14 @@ export async function listSessionFilesForAgent(agentId: string): Promise<string[
   ensureSessionFilesInvalidationSubscription();
   const dir = resolveSessionTranscriptsDirForAgent(agentId);
   const existing = sessionFilesListingByDir.get(dir);
+  // Return a copy: coalesced and cached callers share the stored snapshot, so
+  // handing out the array directly would let one caller's in-place mutation
+  // corrupt the cache and every other caller's view.
   if (existing?.inFlight) {
-    return await existing.inFlight;
+    return (await existing.inFlight).slice();
   }
   if (existing?.value && Date.now() < existing.expiresAt) {
-    return existing.value;
+    return existing.value.slice();
   }
   const entry: SessionFilesListingEntry = { expiresAt: 0 };
   sessionFilesListingByDir.set(dir, entry);
@@ -426,7 +430,7 @@ export async function listSessionFilesForAgent(agentId: string): Promise<string[
   // single read; the snapshot is only stored on success.
   const inFlight = loadSessionFilesSnapshot(dir, entry);
   entry.inFlight = inFlight;
-  return await inFlight;
+  return (await inFlight).slice();
 }
 
 /** Clears cached session-file listing snapshots. Used by tests to isolate runs. */

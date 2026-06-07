@@ -135,7 +135,7 @@ describe("listSessionFilesForAgent listing cache", () => {
 
     await listSessionFilesForAgent("main");
     writeSession("b.jsonl");
-    vi.setSystemTime(Date.now() + 5_001);
+    vi.setSystemTime(Date.now() + 1_001);
     const refreshed = await listSessionFilesForAgent("main");
 
     expect(readdirSpy).toHaveBeenCalledTimes(2);
