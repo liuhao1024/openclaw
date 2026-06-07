@@ -310,6 +310,17 @@ function shouldUseManagedEnvProxyForUrl(url: string): boolean {
   return process.env["OPENCLAW_PROXY_ACTIVE"] === "1" && shouldUseEnvHttpProxyForUrl(url);
 }
 
+function assertExplicitProxySupportsMediaTarget(
+  url: URL,
+  dispatcherPolicy?: PinnedDispatcherPolicy,
+): void {
+  if (dispatcherPolicy?.mode === "explicit-proxy" && url.protocol !== "https:") {
+    throw new Error(
+      "Explicit proxy SSRF pinning requires HTTPS targets; plain HTTP targets are not supported",
+    );
+  }
+}
+
 async function createMediaFetchDispatcher(params: {
   url: URL;
   attempt: FetchDispatcherAttempt;
@@ -323,6 +334,7 @@ async function createMediaFetchDispatcher(params: {
   if (dispatcherPolicy?.mode === "explicit-proxy" && trustExplicitProxyDns === true) {
     return createMediaFetchDispatcherWithoutPinnedDns(dispatcherPolicy, timeoutMs);
   }
+  assertExplicitProxySupportsMediaTarget(params.url, dispatcherPolicy);
   const resolvedFetch = fetchImpl ?? globalThis.fetch;
   const canUsePinnedDns = attempt.lookupFn !== undefined || !isMockedFetch(resolvedFetch);
   if (!canUsePinnedDns) {

@@ -607,6 +607,27 @@ describe("readRemoteMediaBuffer", () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects plain HTTP media targets through explicit proxies unless proxy DNS is trusted", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("unexpected"));
+
+    await expect(
+      readRemoteMediaBuffer({
+        url: "http://files.example.test/file.bin",
+        maxBytes: 1024,
+        dispatcherPolicy: {
+          mode: "explicit-proxy",
+          proxyUrl: "http://127.0.0.1:8888",
+          allowPrivateProxy: true,
+        },
+      }),
+    ).rejects.toThrow(
+      "Explicit proxy SSRF pinning requires HTTPS targets; plain HTTP targets are not supported",
+    );
+
+    expect(createHttp1ProxyAgentMock).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("streams successful responses directly into the media store", async () => {
     const fetchImpl = vi.fn(
       async () =>

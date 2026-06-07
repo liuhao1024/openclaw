@@ -728,6 +728,17 @@ type ProviderTransportFetchResult = {
   refreshTimeout?: () => void;
 };
 
+function assertExplicitProxySupportsProviderTarget(
+  url: URL,
+  dispatcherPolicy?: PinnedDispatcherPolicy,
+): void {
+  if (dispatcherPolicy?.mode === "explicit-proxy" && url.protocol !== "https:") {
+    throw new Error(
+      "Explicit proxy SSRF pinning requires HTTPS targets; plain HTTP targets are not supported",
+    );
+  }
+}
+
 async function createProviderTransportDispatcher(params: {
   url: string;
   dispatcherPolicy: PinnedDispatcherPolicy | undefined;
@@ -739,6 +750,7 @@ async function createProviderTransportDispatcher(params: {
   if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
     throw new Error("Invalid URL: must be http or https");
   }
+  assertExplicitProxySupportsProviderTarget(parsedUrl, params.dispatcherPolicy);
   const policyForUrl = resolveSsrFPolicyForUrl(parsedUrl, params.policy);
 
   if (params.useEnvProxy && !params.dispatcherPolicy) {

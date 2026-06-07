@@ -907,6 +907,30 @@ describe("buildGuardedModelFetch", () => {
     );
   });
 
+  it("rejects plain HTTP provider targets through explicit proxies", async () => {
+    buildProviderRequestDispatcherPolicyMock.mockReturnValueOnce({
+      mode: "explicit-proxy",
+      proxyUrl: "https://proxy.example:8443",
+    });
+    const model = {
+      id: "local-model",
+      provider: "local",
+      api: "openai-responses",
+      baseUrl: "http://model.example.test/v1",
+    } as unknown as Model<"openai-responses">;
+
+    await expect(
+      buildGuardedModelFetch(model)("http://model.example.test/v1/responses", {
+        method: "POST",
+      }),
+    ).rejects.toThrow(
+      "Explicit proxy SSRF pinning requires HTTPS targets; plain HTTP targets are not supported",
+    );
+
+    expect(createHttp1ProxyAgentMock).not.toHaveBeenCalled();
+    expect(fetchWithSsrFGuardMock).not.toHaveBeenCalled();
+  });
+
   it("threads explicit transport timeouts into the provider fetch signal", async () => {
     const model = {
       id: "gpt-5.4",
