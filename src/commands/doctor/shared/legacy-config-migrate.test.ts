@@ -108,7 +108,6 @@ describe("deprecated generic fetch config migrate", () => {
     const issues = findLegacyConfigIssues(raw);
     expect(issues.map((issue) => issue.path)).toEqual([
       "tools.web.fetch.maxRedirects",
-      "tools.web.fetch.ssrfPolicy",
       "tools.web.fetch.useTrustedEnvProxy",
       "gateway.http.endpoints.chatCompletions.images.maxRedirects",
       "gateway.http.endpoints.responses.files.maxRedirects",
@@ -116,7 +115,7 @@ describe("deprecated generic fetch config migrate", () => {
     ]);
     expect(issues.map((issue) => issue.message)).toEqual(
       Array.from(
-        { length: 6 },
+        { length: 5 },
         () =>
           'Deprecated generic fetch config is accepted during this migration window, but outbound policy now belongs at the managed proxy / Proxyline boundary. Run "openclaw doctor --fix" to remove this key.',
       ),
@@ -124,7 +123,12 @@ describe("deprecated generic fetch config migrate", () => {
 
     const res = migrateLegacyConfigForTest(raw);
 
-    expect(res.config?.tools?.web?.fetch).toEqual({ enabled: true });
+    expect(res.config?.tools?.web?.fetch).toEqual({
+      enabled: true,
+      ssrfPolicy: {
+        allowRfc2544BenchmarkRange: true,
+      },
+    });
     expect(res.config?.gateway?.http?.endpoints?.chatCompletions?.images).toEqual({
       allowUrl: true,
     });
@@ -136,7 +140,6 @@ describe("deprecated generic fetch config migrate", () => {
     });
     expect(res.changes).toEqual([
       "Removed deprecated tools.web.fetch.maxRedirects.",
-      "Removed deprecated tools.web.fetch.ssrfPolicy.",
       "Removed deprecated tools.web.fetch.useTrustedEnvProxy.",
       "Removed deprecated gateway.http.endpoints.chatCompletions.images.maxRedirects.",
       "Removed deprecated gateway.http.endpoints.responses.files.maxRedirects.",

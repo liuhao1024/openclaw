@@ -166,7 +166,9 @@ These old keys are deprecated and ignored by direct `web_fetch`:
 - `tools.web.fetch.ssrfPolicy`
 
 Run `openclaw doctor` to report deprecated keys, or run
-`openclaw doctor --fix` to remove them from config.
+`openclaw doctor --fix` to remove `maxRedirects` and `useTrustedEnvProxy` from
+config. `ssrfPolicy` is preserved for now because remote media tools still read
+that shared key until a replacement media-specific key exists.
 
 Use [Network proxy](/security/network-proxy) when a deployment needs outbound
 destination policy. Managed proxy / Proxyline is the supported egress-policy

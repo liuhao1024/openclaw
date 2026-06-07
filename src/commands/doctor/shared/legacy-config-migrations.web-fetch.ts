@@ -11,7 +11,6 @@ const DEPRECATED_GENERIC_FETCH_CONFIG_MESSAGE =
 
 const DEPRECATED_GENERIC_FETCH_CONFIG_PATHS = [
   ["tools", "web", "fetch", "maxRedirects"],
-  ["tools", "web", "fetch", "ssrfPolicy"],
   ["tools", "web", "fetch", "useTrustedEnvProxy"],
   ["gateway", "http", "endpoints", "chatCompletions", "images", "maxRedirects"],
   ["gateway", "http", "endpoints", "responses", "files", "maxRedirects"],

@@ -313,13 +313,13 @@ const DOCTOR_DEPRECATION_COMPAT_RECORDS = [
     warningStarts: "2026-06-07",
     removeAfter: "2026-09-07",
     source:
-      "tools.web.fetch.maxRedirects; tools.web.fetch.ssrfPolicy; tools.web.fetch.useTrustedEnvProxy; gateway.http.endpoints.chatCompletions.images.maxRedirects; gateway.http.endpoints.responses.files.maxRedirects; gateway.http.endpoints.responses.images.maxRedirects",
+      "tools.web.fetch.maxRedirects; tools.web.fetch.useTrustedEnvProxy; gateway.http.endpoints.chatCompletions.images.maxRedirects; gateway.http.endpoints.responses.files.maxRedirects; gateway.http.endpoints.responses.images.maxRedirects",
     migration: "src/commands/doctor/shared/legacy-config-migrations.web-fetch.ts",
     replacement: "managed proxy / Proxyline outbound policy boundary",
     docsPath: "/security/network-proxy",
     tests: ["src/commands/doctor/shared/legacy-config-migrate.test.ts"],
     notes:
-      "Doctor keeps these deprecated generic fetch keys loadable and removable during rollout. Gateway input URL fetches now reject redirects by default, so gateway maxRedirects is no longer a behavior switch. This does not claim Proxyline has exact feature parity with the old fetch guard knobs.",
+      "Doctor keeps these deprecated generic fetch keys loadable and removable during rollout. tools.web.fetch.ssrfPolicy is excluded from removal because media URL tools still consume it until they get a replacement key. Gateway input URL fetches now reject redirects by default, so gateway maxRedirects is no longer a behavior switch. This does not claim Proxyline has exact feature parity with the old fetch guard knobs.",
   }),
   deprecatedCompatRecord({
     code: "doctor-x-search-plugin-config",
