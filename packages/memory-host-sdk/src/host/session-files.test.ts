@@ -1,11 +1,14 @@
 // Memory Host SDK tests cover session files behavior.
 import fsSync from "node:fs";
+import fsPromises from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { emitSessionTranscriptUpdate } from "../../../../src/sessions/transcript-events.js";
 import {
   buildSessionEntry,
   listSessionFilesForAgent,
+  resetSessionFilesListingCache,
   sessionPathForFile,
   type SessionFileEntry,
 } from "./session-files.js";
@@ -71,6 +74,85 @@ describe("listSessionFilesForAgent", () => {
     expect(files.map((filePath) => path.basename(filePath)).toSorted()).toEqual(
       included.toSorted(),
     );
+  });
+});
+
+describe("listSessionFilesForAgent listing cache", () => {
+  let sessionsDir: string;
+
+  beforeEach(() => {
+    resetSessionFilesListingCache();
+    sessionsDir = path.join(tmpDir, "agents", "main", "sessions");
+    fsSync.mkdirSync(sessionsDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+    resetSessionFilesListingCache();
+  });
+
+  function writeSession(name: string): void {
+    fsSync.writeFileSync(path.join(sessionsDir, name), "");
+  }
+
+  function baseNames(files: string[]): string[] {
+    return files.map((filePath) => path.basename(filePath)).toSorted();
+  }
+
+  it("coalesces concurrent reads into a single READDIR", async () => {
+    writeSession("a.jsonl");
+    const readdirSpy = vi.spyOn(fsPromises, "readdir");
+
+    const [first, second] = await Promise.all([
+      listSessionFilesForAgent("main"),
+      listSessionFilesForAgent("main"),
+    ]);
+
+    expect(readdirSpy).toHaveBeenCalledTimes(1);
+    expect(first).toEqual(second);
+    expect(baseNames(first)).toEqual(["a.jsonl"]);
+  });
+
+  it("serves the cached snapshot within the TTL and skips repeat scans", async () => {
+    writeSession("a.jsonl");
+    const readdirSpy = vi.spyOn(fsPromises, "readdir");
+
+    const firstCall = await listSessionFilesForAgent("main");
+    // Mutate the dir without emitting a transcript event; the cache must hold.
+    writeSession("b.jsonl");
+    const secondCall = await listSessionFilesForAgent("main");
+
+    expect(readdirSpy).toHaveBeenCalledTimes(1);
+    expect(baseNames(firstCall)).toEqual(["a.jsonl"]);
+    expect(baseNames(secondCall)).toEqual(["a.jsonl"]);
+  });
+
+  it("refreshes the snapshot after the TTL elapses", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    writeSession("a.jsonl");
+    const readdirSpy = vi.spyOn(fsPromises, "readdir");
+
+    await listSessionFilesForAgent("main");
+    writeSession("b.jsonl");
+    vi.setSystemTime(Date.now() + 5_001);
+    const refreshed = await listSessionFilesForAgent("main");
+
+    expect(readdirSpy).toHaveBeenCalledTimes(2);
+    expect(baseNames(refreshed)).toEqual(["a.jsonl", "b.jsonl"]);
+  });
+
+  it("invalidates the snapshot when a transcript update lands for the agent", async () => {
+    writeSession("a.jsonl");
+    const readdirSpy = vi.spyOn(fsPromises, "readdir");
+
+    await listSessionFilesForAgent("main");
+    writeSession("b.jsonl");
+    emitSessionTranscriptUpdate({ sessionFile: path.join(sessionsDir, "b.jsonl") });
+    const afterInvalidate = await listSessionFilesForAgent("main");
+
+    expect(readdirSpy).toHaveBeenCalledTimes(2);
+    expect(baseNames(afterInvalidate)).toEqual(["a.jsonl", "b.jsonl"]);
   });
 });
 

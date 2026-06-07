@@ -16,6 +16,7 @@ import {
   isSessionArchiveArtifactName,
   isSilentReplyPayloadText,
   isUsageCountedSessionTranscriptFileName,
+  onSessionTranscriptUpdate,
   parseUsageCountedSessionIdFromFileName,
   resolveSessionTranscriptsDirForAgent,
   stripInboundMetadata,
@@ -300,8 +301,66 @@ function classifySessionTranscriptFromSessionStore(absPath: string): {
   };
 }
 
-export async function listSessionFilesForAgent(agentId: string): Promise<string[]> {
-  const dir = resolveSessionTranscriptsDirForAgent(agentId);
+// `listSessionFilesForAgent` performs a directory READDIR that is expensive on
+// networked filesystems (NFS): resolving each entry's type turns one logical
+// scan into roughly one attribute fetch per session file. Several subsystems
+// (startup catch-up, incremental sync, dreaming, qmd export) scan the same
+// agent sessions dir in close succession, so we coalesce concurrent reads and
+// serve a short-lived snapshot between scans.
+//
+// Correctness comes from event-driven invalidation, not from the TTL: every
+// in-process mutation to a session-owned path (append, compaction, rewrite,
+// chat inject, command exec, and `.reset.`/`.deleted.` archive rotation) emits
+// `onSessionTranscriptUpdate`, which drops the affected directory's snapshot.
+// The TTL is only a backstop for writers that never reach our event bus, such
+// as another node sharing the NFS sessions dir or low-frequency archive prunes.
+const SESSION_FILES_LISTING_TTL_MS = 5_000;
+// Bound the snapshot map so a process that touches many agents cannot grow it
+// without limit; agents are few in practice, so eviction is rare.
+const SESSION_FILES_LISTING_MAX_DIRS = 64;
+
+type SessionFilesListingEntry = {
+  // Shared in-flight read so concurrent callers issue a single READDIR.
+  inFlight?: Promise<string[]>;
+  // Last resolved listing, served until `expiresAt` or invalidation.
+  value?: string[];
+  expiresAt: number;
+};
+
+// Keyed by the resolved sessions directory rather than the agent id: the dir
+// folds in OPENCLAW_STATE_DIR so it stays correct across env changes, and it
+// matches `path.dirname(update.sessionFile)` for precise invalidation.
+const sessionFilesListingByDir = new Map<string, SessionFilesListingEntry>();
+let sessionFilesInvalidationSubscribed = false;
+
+function ensureSessionFilesInvalidationSubscription(): void {
+  if (sessionFilesInvalidationSubscribed) {
+    return;
+  }
+  sessionFilesInvalidationSubscribed = true;
+  // Single canonical invalidation channel. Archive rotation also emits here, so
+  // each rotation/mutation write path is covered without a separate hook.
+  onSessionTranscriptUpdate((update) => {
+    if (update.agentId) {
+      sessionFilesListingByDir.delete(resolveSessionTranscriptsDirForAgent(update.agentId));
+    }
+    if (update.sessionFile) {
+      sessionFilesListingByDir.delete(path.dirname(update.sessionFile));
+    }
+  });
+}
+
+function pruneSessionFilesListing(): void {
+  while (sessionFilesListingByDir.size > SESSION_FILES_LISTING_MAX_DIRS) {
+    const oldest = sessionFilesListingByDir.keys().next().value;
+    if (oldest === undefined) {
+      return;
+    }
+    sessionFilesListingByDir.delete(oldest);
+  }
+}
+
+async function readSessionFilesForDir(dir: string): Promise<string[]> {
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     return entries
@@ -312,6 +371,36 @@ export async function listSessionFilesForAgent(agentId: string): Promise<string[
   } catch {
     return [];
   }
+}
+
+export async function listSessionFilesForAgent(agentId: string): Promise<string[]> {
+  ensureSessionFilesInvalidationSubscription();
+  const dir = resolveSessionTranscriptsDirForAgent(agentId);
+  const existing = sessionFilesListingByDir.get(dir);
+  if (existing?.inFlight) {
+    return await existing.inFlight;
+  }
+  if (existing?.value && Date.now() < existing.expiresAt) {
+    return existing.value;
+  }
+  const inFlight = readSessionFilesForDir(dir);
+  const entry: SessionFilesListingEntry = { inFlight, expiresAt: 0 };
+  sessionFilesListingByDir.set(dir, entry);
+  pruneSessionFilesListing();
+  const value = await inFlight;
+  // Only publish the snapshot if this read is still the active entry; an
+  // invalidation or newer read during the await must win.
+  if (sessionFilesListingByDir.get(dir) === entry) {
+    entry.inFlight = undefined;
+    entry.value = value;
+    entry.expiresAt = Date.now() + SESSION_FILES_LISTING_TTL_MS;
+  }
+  return value;
+}
+
+/** Clears cached session-file listing snapshots. Used by tests to isolate runs. */
+export function resetSessionFilesListingCache(): void {
+  sessionFilesListingByDir.clear();
 }
 
 function extractAgentIdFromSessionPath(absPath: string): string | null {
