@@ -416,7 +416,7 @@ function readProcessTreeCpuMs(rootPid) {
  * Reports whether gateway watch output contains a ready marker.
  */
 export function hasGatewayReadyLog(text) {
-  return /\[gateway\] (?:http server listening|ready \()/.test(text);
+  return /\[gateway\] (?:http server listening|ready(?:\s|\(|$))/.test(text);
 }
 
 async function waitForGatewayReady(readText, timeoutMs) {

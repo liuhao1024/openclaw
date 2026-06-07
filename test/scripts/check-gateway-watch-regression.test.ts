@@ -85,6 +85,7 @@ describe("check-gateway-watch-regression", () => {
 
   it("recognizes current and legacy gateway ready logs", () => {
     expect(hasGatewayReadyLog("[gateway] http server listening (0 plugins, 0.8s)")).toBe(true);
+    expect(hasGatewayReadyLog("[gateway] ready")).toBe(true);
     expect(hasGatewayReadyLog("[gateway] ready (0 plugins, 0.8s)")).toBe(true);
     expect(hasGatewayReadyLog("[gateway] starting HTTP server...")).toBe(false);
   });
