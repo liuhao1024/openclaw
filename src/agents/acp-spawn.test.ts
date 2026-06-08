@@ -13,6 +13,8 @@ import {
   type SessionBindingPlacement,
   type SessionBindingRecord,
 } from "../infra/outbound/session-binding-service.js";
+import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../plugins/runtime.js";
+import { createChannelTestPluginBase, createTestRegistry } from "../test-utils/channel-plugins.js";
 
 function createDefaultSpawnConfig(): OpenClawConfig {
   return {
@@ -460,6 +462,7 @@ function enableMatrixAcpThreadBindings(): void {
     },
   });
   const matrixPlugin = {
+    ...createChannelTestPluginBase({ id: "matrix", label: "Matrix" }),
     messaging: {
       resolveDeliveryTarget: ({
         conversationId,
@@ -494,6 +497,15 @@ function enableMatrixAcpThreadBindings(): void {
   );
   hoisted.getLoadedChannelPluginMock.mockImplementation((channelId: string) =>
     channelId === "matrix" ? matrixPlugin : undefined,
+  );
+  setActivePluginRegistry(
+    createTestRegistry([
+      {
+        pluginId: "matrix",
+        source: "test",
+        plugin: matrixPlugin,
+      },
+    ]),
   );
   registerSessionBindingAdapter({
     channel: "matrix",
@@ -569,6 +581,7 @@ function enableTelegramCurrentConversationBindings(): void {
     },
   });
   const telegramPlugin = {
+    ...createChannelTestPluginBase({ id: "telegram", label: "Telegram" }),
     messaging: {
       resolveInboundConversation: ({
         conversationId,
@@ -583,13 +596,15 @@ function enableTelegramCurrentConversationBindings(): void {
         const normalized = source.replace(/^telegram:(?:group:|channel:|direct:)?/i, "");
         const explicitThreadId = threadId == null ? "" : String(threadId).trim();
         if (/^-?\d+$/.test(normalized) && /^\d+$/.test(explicitThreadId)) {
-          return { conversationId: `${normalized}:topic:${explicitThreadId}` };
+          return { conversationId: explicitThreadId, parentConversationId: normalized };
         }
         const topicMatch = /^(-?\d+):topic:(\d+)$/i.exec(normalized);
         if (topicMatch?.[1] && topicMatch[2]) {
-          return { conversationId: `${topicMatch[1]}:topic:${topicMatch[2]}` };
+          return { conversationId: topicMatch[2], parentConversationId: topicMatch[1] };
         }
-        return /^-?\d+$/.test(normalized) ? { conversationId: normalized } : undefined;
+        return /^-?\d+$/.test(normalized)
+          ? { conversationId: normalized, parentConversationId: normalized }
+          : undefined;
       },
     },
   };
@@ -598,6 +613,15 @@ function enableTelegramCurrentConversationBindings(): void {
   );
   hoisted.getLoadedChannelPluginMock.mockImplementation((channelId: string) =>
     channelId === "telegram" ? telegramPlugin : undefined,
+  );
+  setActivePluginRegistry(
+    createTestRegistry([
+      {
+        pluginId: "telegram",
+        source: "test",
+        plugin: telegramPlugin,
+      },
+    ]),
   );
   registerSessionBindingAdapter({
     channel: "telegram",
@@ -616,6 +640,8 @@ function enableTelegramCurrentConversationBindings(): void {
 
 describe("spawnAcpDirect", () => {
   beforeEach(() => {
+    resetPluginRuntimeStateForTest();
+    setActivePluginRegistry(createTestRegistry());
     replaceSpawnConfig(createDefaultSpawnConfig());
     hoisted.areHeartbeatsEnabledMock.mockReset().mockReturnValue(true);
     hoisted.getChannelPluginMock.mockReset().mockReturnValue(undefined);
@@ -762,6 +788,7 @@ describe("spawnAcpDirect", () => {
 
   afterEach(() => {
     sessionBindingServiceTesting.resetSessionBindingAdaptersForTests();
+    resetPluginRuntimeStateForTest();
   });
 
   it("spawns ACP session, binds a new thread, and dispatches initial task", async () => {
@@ -3051,7 +3078,8 @@ describe("spawnAcpDirect", () => {
       conversation: {
         channel: "telegram",
         accountId: "default",
-        conversationId: "-1003342490704:topic:2",
+        conversationId: "2",
+        parentConversationId: "-1003342490704",
       },
     });
   });
