@@ -2,6 +2,12 @@
 
 Docs: https://docs.openclaw.ai
 
+## 2026.6.8-alpha.1
+
+### Fixes
+
+- Release validation: reuse alpha stabilization fixes for plugin prerelease, QA runtime parity, package scanning, Docker resource ceilings, gateway readiness detection, and runtime fixture handling while isolating Codex startup auth state and refreshing generated release metadata for the current branch.
+
 ## 2026.6.5
 
 ### Highlights
