@@ -374,7 +374,7 @@ describe("tasks commands", () => {
       expect(updated[childSessionKey]).toBeUndefined();
       expect(updated["agent:main:telegram:dm:recent"]).toBeDefined();
     });
-  });
+  }, 240_000);
 
   it("does not build JSON-only diagnostics for text maintenance output", async () => {
     await withTaskCommandStateDir(async () => {

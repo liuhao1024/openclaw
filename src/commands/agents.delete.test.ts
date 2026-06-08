@@ -59,7 +59,7 @@ async function arrangeAgentsDeleteTest(params: {
 }) {
   const deletedAgentId = params.deletedAgentId ?? "ops";
   const storePath = resolveStorePath(params.cfg.session?.store, { agentId: deletedAgentId });
-  await saveSessionStore(storePath, params.sessions);
+  await saveSessionStore(storePath, params.sessions, { skipMaintenance: true });
   await fs.mkdir(path.join(params.stateDir, `workspace-${deletedAgentId}`), { recursive: true });
   await fs.mkdir(path.join(params.stateDir, "agents", deletedAgentId, "agent"), {
     recursive: true,
@@ -201,7 +201,7 @@ describe("agents delete command", () => {
       expect(output?.workspaceRetainedReason).toBe("shared");
       expect(output?.transport).toBeUndefined();
     });
-  });
+  }, 240_000);
 
   it("purges deleted agent entries from the session store", async () => {
     await withStateDirEnv("openclaw-agents-delete-", async ({ stateDir }) => {

@@ -10,7 +10,7 @@ import {
   resolveMemoryLightDreamingConfig,
   resolveMemoryRemDreamingConfig,
 } from "openclaw/plugin-sdk/memory-core-host-status";
-import { saveSessionStore } from "openclaw/plugin-sdk/session-store-runtime";
+import { saveSessionStore, type SessionEntry } from "openclaw/plugin-sdk/session-store-runtime";
 import { describe, expect, it, vi } from "vitest";
 import {
   testing,
@@ -1220,7 +1220,7 @@ describe("memory-core dreaming phases", () => {
           sessionFile: transcriptPath,
           updatedAt: Date.parse("2026-04-05T18:05:00.000Z"),
         },
-      },
+      } as Record<string, SessionEntry>,
       { skipMaintenance: true },
     );
     const mtime = new Date("2026-04-05T18:05:00.000Z");
@@ -1315,7 +1315,7 @@ describe("memory-core dreaming phases", () => {
           sessionFile: transcriptPath,
           updatedAt: Date.now(),
         },
-      },
+      } as Record<string, SessionEntry>,
       { skipMaintenance: true },
     );
 
