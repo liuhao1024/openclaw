@@ -11,6 +11,7 @@ import {
 } from "openclaw/plugin-sdk/conversation-runtime";
 import { resolveAgentRoute } from "openclaw/plugin-sdk/routing";
 import { resolveThreadSessionKeys } from "openclaw/plugin-sdk/routing";
+import { saveSessionStore, type SessionEntry } from "openclaw/plugin-sdk/session-store-runtime";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ResolvedSlackAccount } from "../../accounts.js";
 import {
@@ -1731,9 +1732,12 @@ Second paragraph should still reach the agent after Slack's preview cutoff.`;
     });
 
     history.mockClear();
-    fs.writeFileSync(
+    await saveSessionStore(
       storePath,
-      JSON.stringify({ [prepared.ctxPayload.SessionKey!]: { updatedAt: Date.now() } }, null, 2),
+      {
+        [prepared.ctxPayload.SessionKey!]: { updatedAt: Date.now() },
+      } as Record<string, SessionEntry>,
+      { skipMaintenance: true },
     );
     const existing = await prepareMessageWith(
       slackCtx,
@@ -1861,9 +1865,12 @@ Second paragraph should still reach the agent after Slack's preview cutoff.`;
       baseSessionKey: route.sessionKey,
       threadId: "200.000",
     });
-    fs.writeFileSync(
+    await saveSessionStore(
       storePath,
-      JSON.stringify({ [threadKeys.sessionKey]: { updatedAt: Date.now() } }, null, 2),
+      {
+        [threadKeys.sessionKey]: { updatedAt: Date.now() },
+      } as Record<string, SessionEntry>,
+      { skipMaintenance: true },
     );
 
     const replies = vi.fn().mockResolvedValueOnce({
@@ -2064,16 +2071,13 @@ Second paragraph should still reach the agent after Slack's preview cutoff.`;
 
   it("preserves Slack thread history when an existing DM session receives a thread reply", async () => {
     const { storePath } = storeFixture.makeTmpStorePath();
-    fs.writeFileSync(
+    await saveSessionStore(
       storePath,
-      JSON.stringify(
-        {
-          "agent:main:main": { updatedAt: Date.now() },
-          "agent:main:main:thread:650.000": { updatedAt: Date.now() },
-        },
-        null,
-        2,
-      ),
+      {
+        "agent:main:main": { updatedAt: Date.now() },
+        "agent:main:main:thread:650.000": { updatedAt: Date.now() },
+      } as Record<string, SessionEntry>,
+      { skipMaintenance: true },
     );
     const replies = vi
       .fn()
