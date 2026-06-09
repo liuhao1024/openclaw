@@ -2,6 +2,12 @@
 
 Docs: https://docs.openclaw.ai
 
+## 2026.6.9-alpha.1
+
+### Fixes
+
+- Release validation: reuse recent alpha stabilization fixes for channel session-store fixtures, ACP spawn channel fixtures, Docker stats handling, kitchen-sink UI descriptor probes, Codex context-engine cleanup, QA image-run waits, package scan ceilings, generated alpha metadata, and shrinkwrap version alignment so the current branch can complete alpha packaging proof.
+
 ## 2026.6.5
 
 ### Highlights
