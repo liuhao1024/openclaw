@@ -80,6 +80,7 @@ import {
   runQaJsonlReplayCommand,
   runQaManualLaneCommand,
   runQaParityReportCommand,
+  runQaProfileCommand,
   runQaSuiteCommand,
 } from "./cli.runtime.js";
 import { runQaTelegramCommand } from "./live-transports/telegram/cli.runtime.js";
@@ -238,6 +239,67 @@ describe("qa cli runtime", () => {
     vi.clearAllMocks();
     await fs.rm(suiteArtifactsDir, { recursive: true, force: true });
     await fs.rm(telegramArtifactsDir, { recursive: true, force: true });
+  });
+
+  it("dispatches a mapped smoke-ci profile category through the suite runner", async () => {
+    const previousProfile = process.env.OPENCLAW_QA_PROFILE;
+    process.env.OPENCLAW_QA_PROFILE = "release";
+    try {
+      runQaSuiteFromRuntime.mockImplementationOnce(async () => {
+        expect(process.env.OPENCLAW_QA_PROFILE).toBe("smoke-ci");
+        return {
+          watchUrl: "http://127.0.0.1:43124",
+          reportPath: suiteReportPath,
+          summaryPath: suiteSummaryPath,
+          scenarios: [],
+        };
+      });
+
+      await runQaProfileCommand({
+        repoRoot: "/tmp/openclaw-repo",
+        outputDir: ".artifacts/qa-e2e/smoke-ci",
+        profile: "smoke-ci",
+        surface: "agent-runtime-and-provider-execution",
+        category: "agent-runtime-and-provider-execution.agent-turn-execution",
+        transportId: "qa-channel",
+        fastMode: true,
+        concurrency: 2,
+        allowFailures: true,
+      });
+
+      expect(runQaSuiteFromRuntime).toHaveBeenCalledWith({
+        repoRoot: path.resolve("/tmp/openclaw-repo"),
+        outputDir: path.resolve("/tmp/openclaw-repo", ".artifacts/qa-e2e/smoke-ci"),
+        transportId: "qa-channel",
+        providerMode: "mock-openai",
+        primaryModel: undefined,
+        alternateModel: undefined,
+        fastMode: true,
+        scenarioIds: ["dm-chat-baseline", "streaming-final-integrity"],
+        concurrency: 2,
+      });
+      expect(process.env.OPENCLAW_QA_PROFILE).toBe("release");
+      expectWriteContains(stdoutWrite, "QA run profile: smoke-ci; categories: 1; scenarios: 2");
+    } finally {
+      if (previousProfile === undefined) {
+        delete process.env.OPENCLAW_QA_PROFILE;
+      } else {
+        process.env.OPENCLAW_QA_PROFILE = previousProfile;
+      }
+    }
+  });
+
+  it("rejects qa profile runs that do not match mapped categories", async () => {
+    await expect(
+      runQaProfileCommand({
+        repoRoot: "/tmp/openclaw-repo",
+        profile: "smoke-ci",
+        surface: "unknown-surface",
+      }),
+    ).rejects.toThrow(
+      "qa run did not find mapped scorecard categories for --profile smoke-ci --surface unknown-surface.",
+    );
+    expect(runQaSuiteFromRuntime).not.toHaveBeenCalled();
   });
 
   it("resolves suite repo-root-relative paths before dispatching", async () => {

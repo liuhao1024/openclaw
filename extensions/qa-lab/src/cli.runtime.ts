@@ -67,6 +67,10 @@ import {
   type QaRuntimeParityTier,
 } from "./scenario-catalog.js";
 import { resolveQaScenarioPackScenarioIds } from "./scenario-packs.js";
+import {
+  readQaScorecardTaxonomyReport,
+  type QaScorecardCategoryMappingReport,
+} from "./scorecard-taxonomy.js";
 import { runQaSuiteFromRuntime } from "./suite-launch.runtime.js";
 import { readQaSuiteFailedOrSkippedScenarioCountFromFile } from "./suite-summary.js";
 import {
@@ -546,6 +550,135 @@ export async function runQaLabSelfCheckCommand(opts: { repoRoot?: string; output
     process.stdout.write(`QA self-check report: ${result.outputPath}\n`);
   } finally {
     await server.stop();
+  }
+}
+
+type QaRunProfile = "smoke-ci" | "release";
+
+export async function runQaProfileCommand(opts: {
+  repoRoot?: string;
+  outputDir?: string;
+  profile: string;
+  surface?: string;
+  category?: string;
+  transportId?: string;
+  providerMode?: QaProviderModeInput;
+  primaryModel?: string;
+  alternateModel?: string;
+  fastMode?: boolean;
+  concurrency?: number;
+  allowFailures?: boolean;
+}) {
+  const profile = normalizeQaRunProfile(opts.profile);
+  const scenarioPack = readQaScenarioPack();
+  const scorecardReport = readQaScorecardTaxonomyReport(scenarioPack.scenarios);
+  const categories = scorecardReport.categories.filter((category) =>
+    qaScorecardCategoryMatchesRunProfile(category, {
+      profile,
+      surface: opts.surface,
+      category: opts.category,
+    }),
+  );
+  if (categories.length === 0) {
+    throw new Error(formatQaRunProfileNoMatchMessage(opts));
+  }
+  const missingScenarioRefs = uniqueStrings(
+    categories.flatMap((category) => category.missingScenarioRefs),
+  );
+  if (missingScenarioRefs.length > 0) {
+    throw new Error(
+      `qa run --profile ${profile} cannot run because mapped scenario refs are missing from the QA scenario catalog: ${missingScenarioRefs.join(", ")}`,
+    );
+  }
+  const scenarioBySourcePath = new Map(
+    scenarioPack.scenarios.map((scenario) => [scenario.sourcePath, scenario.id] as const),
+  );
+  const scenarioIds = uniqueStrings(
+    categories.flatMap((category) =>
+      category.scenarioRefs.map((scenarioRef) => scenarioBySourcePath.get(scenarioRef) ?? ""),
+    ),
+  ).filter((scenarioId) => scenarioId.length > 0);
+  if (scenarioIds.length === 0) {
+    throw new Error(`qa run --profile ${profile} did not resolve any executable QA scenarios.`);
+  }
+  const providerMode = opts.providerMode ?? defaultQaRunProfileProviderMode(profile);
+  process.stdout.write(
+    `QA run profile: ${profile}; categories: ${categories.length}; scenarios: ${scenarioIds.length}\n`,
+  );
+  await withTemporaryQaProfileEnv(profile, async () => {
+    await runQaSuiteCommand({
+      repoRoot: opts.repoRoot,
+      outputDir: opts.outputDir,
+      transportId: opts.transportId,
+      providerMode,
+      primaryModel: opts.primaryModel,
+      alternateModel: opts.alternateModel,
+      fastMode: opts.fastMode,
+      scenarioIds,
+      concurrency: opts.concurrency,
+      allowFailures: opts.allowFailures,
+    });
+  });
+}
+
+function normalizeQaRunProfile(value: string): QaRunProfile {
+  const normalized = value.trim();
+  if (normalized === "smoke-ci" || normalized === "release") {
+    return normalized;
+  }
+  throw new Error(`--profile must be one of smoke-ci or release, got "${value}".`);
+}
+
+function defaultQaRunProfileProviderMode(profile: QaRunProfile): QaProviderModeInput {
+  return profile === "smoke-ci" ? "mock-openai" : DEFAULT_QA_LIVE_PROVIDER_MODE;
+}
+
+function qaScorecardCategoryMatchesRunProfile(
+  category: QaScorecardCategoryMappingReport,
+  opts: { profile: QaRunProfile; surface?: string; category?: string },
+): boolean {
+  if (!category.profiles.includes(opts.profile)) {
+    return false;
+  }
+  if (opts.surface?.trim()) {
+    const surface = opts.surface.trim();
+    if (category.taxonomySurfaceId !== surface && !category.id.startsWith(`${surface}.`)) {
+      return false;
+    }
+  }
+  if (opts.category?.trim() && category.id !== opts.category.trim()) {
+    return false;
+  }
+  return true;
+}
+
+function formatQaRunProfileNoMatchMessage(opts: {
+  profile: string;
+  surface?: string;
+  category?: string;
+}): string {
+  const filters = [
+    `--profile ${opts.profile}`,
+    opts.surface?.trim() ? `--surface ${opts.surface.trim()}` : null,
+    opts.category?.trim() ? `--category ${opts.category.trim()}` : null,
+  ].filter((filter): filter is string => filter !== null);
+  return `qa run did not find mapped scorecard categories for ${filters.join(" ")}.`;
+}
+
+async function withTemporaryQaProfileEnv<T>(
+  profile: QaRunProfile,
+  run: () => Promise<T>,
+): Promise<T> {
+  const previousProfile = process.env.OPENCLAW_QA_PROFILE;
+  process.env.OPENCLAW_QA_PROFILE = profile;
+  try {
+    return await run();
+  } finally {
+    if (previousProfile === undefined) {
+      delete process.env.OPENCLAW_QA_PROFILE;
+    } else {
+      process.env.OPENCLAW_QA_PROFILE = previousProfile;
+    }
   }
 }
 
