@@ -771,6 +771,39 @@ describe("doctor legacy state migrations", () => {
     expect(store["agent:main:main"]?.sessionFile).toBe(movedPath);
   });
 
+  it("refreshes stale target sessionFile metadata after a shipped JSON migration moved transcripts", async () => {
+    const root = await makeTempRoot();
+    const legacySessionFile = path.join(root, "sessions", "upgrade-main-session.jsonl");
+    const targetDir = path.join(root, "agents", "main", "sessions");
+    fs.mkdirSync(targetDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(targetDir, "upgrade-main-session.jsonl"),
+      "legacy transcript",
+      "utf-8",
+    );
+    writeJson5(path.join(targetDir, "sessions.json"), {
+      main: {
+        sessionId: "upgrade-main-session",
+        sessionFile: legacySessionFile,
+        updatedAt: 1710000000000,
+      },
+    });
+
+    const detected = await detectLegacyStateMigrations({
+      cfg: {},
+      env: { OPENCLAW_STATE_DIR: root } as NodeJS.ProcessEnv,
+    });
+    const result = await runLegacyStateMigrations({
+      detected,
+      now: () => 123,
+    });
+
+    const movedPath = path.join(targetDir, "upgrade-main-session.jsonl");
+    const store = readSessionsStore(targetDir);
+    expect(result.warnings).toStrictEqual([]);
+    expect(store["agent:main:main"]?.sessionFile).toBe(movedPath);
+  });
+
   it("keeps migrated sessionFile metadata aligned with conflicted transcript moves", async () => {
     const root = await makeTempRoot();
     writeLegacySessionsFixture({

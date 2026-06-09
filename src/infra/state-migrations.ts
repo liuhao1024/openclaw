@@ -1935,13 +1935,15 @@ function mergeSessionEntry(params: {
 function rewriteLegacySessionFilePaths(params: {
   store: Record<string, SessionEntryLike>;
   legacyDir: string;
+  targetDir?: string;
+  inferFromSessionId?: boolean;
   movedFiles: MovedSessionFiles;
 }): Record<string, SessionEntryLike> {
   const rewritten: Record<string, SessionEntryLike> = {};
   const legacyDir = path.resolve(params.legacyDir);
   for (const [key, entry] of Object.entries(params.store)) {
     const rawSessionFile = (entry as { sessionFile?: unknown }).sessionFile;
-    const movedSessionFile =
+    const movedFromPlan =
       typeof rawSessionFile === "string"
         ? lookupMovedSessionFile(
             params.movedFiles,
@@ -1949,11 +1951,21 @@ function rewriteLegacySessionFilePaths(params: {
               ? path.resolve(rawSessionFile)
               : path.resolve(legacyDir, rawSessionFile),
           )
-        : resolveMovedSessionFileFromSessionId({
-            entry,
-            legacyDir,
-            movedFiles: params.movedFiles,
-          });
+        : params.inferFromSessionId === false
+          ? undefined
+          : resolveMovedSessionFileFromSessionId({
+              entry,
+              legacyDir,
+              movedFiles: params.movedFiles,
+            });
+    const movedSessionFile =
+      movedFromPlan ??
+      resolveAlreadyMovedSessionFile({
+        entry,
+        legacyDir,
+        rawSessionFile,
+        targetDir: params.targetDir,
+      });
     if (!movedSessionFile) {
       rewritten[key] = entry;
       continue;
@@ -1964,6 +1976,44 @@ function rewriteLegacySessionFilePaths(params: {
     };
   }
   return rewritten;
+}
+
+function resolveAlreadyMovedSessionFile(params: {
+  entry: SessionEntryLike;
+  legacyDir: string;
+  rawSessionFile: unknown;
+  targetDir?: string;
+}): string | undefined {
+  if (!params.targetDir) {
+    return undefined;
+  }
+  const rawSessionId = (params.entry as { sessionId?: unknown }).sessionId;
+  if (typeof rawSessionId !== "string") {
+    return undefined;
+  }
+  let sessionId: string;
+  try {
+    sessionId = validateSessionId(rawSessionId);
+  } catch {
+    return undefined;
+  }
+  const targetPath = path.join(params.targetDir, `${sessionId}.jsonl`);
+  if (!fileExists(targetPath)) {
+    return undefined;
+  }
+  if (typeof params.rawSessionFile !== "string") {
+    return undefined;
+  }
+  const resolvedSessionFile = path.isAbsolute(params.rawSessionFile)
+    ? path.resolve(params.rawSessionFile)
+    : path.resolve(params.legacyDir, params.rawSessionFile);
+  if (sessionMovePathKey(resolvedSessionFile) === sessionMovePathKey(targetPath)) {
+    return undefined;
+  }
+  if (isWithinDir(path.resolve(params.legacyDir), resolvedSessionFile)) {
+    return targetPath;
+  }
+  return fileExists(resolvedSessionFile) ? undefined : targetPath;
 }
 
 function resolveMovedSessionFileFromSessionId(params: {
@@ -3327,9 +3377,17 @@ async function migrateLegacySessions(
   const rewrittenLegacyStore = rewriteLegacySessionFilePaths({
     store: canonicalizedLegacy.store,
     legacyDir: detected.sessions.legacyDir,
+    targetDir: detected.sessions.targetDir,
     movedFiles: movedSessionFiles,
   });
-  const merged: Record<string, SessionEntryLike> = { ...canonicalizedTarget.store };
+  const rewrittenTargetStore = rewriteLegacySessionFilePaths({
+    store: canonicalizedTarget.store,
+    legacyDir: detected.sessions.legacyDir,
+    targetDir: detected.sessions.targetDir,
+    inferFromSessionId: false,
+    movedFiles: movedSessionFiles,
+  });
+  const merged: Record<string, SessionEntryLike> = { ...rewrittenTargetStore };
   for (const [key, entry] of Object.entries(rewrittenLegacyStore)) {
     merged[key] = mergeSessionEntry({
       existing: merged[key],
