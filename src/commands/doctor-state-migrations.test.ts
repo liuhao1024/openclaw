@@ -322,6 +322,37 @@ function writeLegacySessionsFixture(params: {
   return legacySessionsDir;
 }
 
+function seedSqliteSessionEntry(params: {
+  storePath: string;
+  key: string;
+  entry: Record<string, unknown>;
+  updatedAt: number;
+}): void {
+  const databasePath = resolveSqliteSessionStoreDatabasePath(params.storePath);
+  fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+  const sqlite = requireNodeSqlite();
+  const db = new sqlite.DatabaseSync(databasePath);
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS cache_entries (
+        scope TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value_json TEXT,
+        blob BLOB,
+        expires_at INTEGER,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (scope, key)
+      );
+    `);
+    db.prepare(`
+      INSERT INTO cache_entries (scope, key, value_json, updated_at)
+      VALUES (?, ?, ?, ?)
+    `).run("session_entries", params.key, JSON.stringify(params.entry), params.updatedAt);
+  } finally {
+    db.close();
+  }
+}
+
 function writeLegacyPluginStateSidecar(root: string): string {
   const sourcePath = path.join(root, "plugin-state", "state.sqlite");
   fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
@@ -693,6 +724,51 @@ describe("doctor legacy state migrations", () => {
     expect(store["agent:main:slack:channel:c123"]?.sessionId).toBe("c");
     expect(store["agent:main:unknown:group:abc"]?.sessionId).toBe("d");
     expect(store["agent:main:subagent:xyz"]?.sessionId).toBe("e");
+  });
+
+  it("refreshes stale SQLite sessionFile metadata when legacy transcripts move", async () => {
+    const root = await makeTempRoot();
+    const legacySessionFile = path.join(root, "sessions", "upgrade-main-session.jsonl");
+    writeLegacySessionsFixture({
+      root,
+      sessions: {
+        main: {
+          sessionId: "upgrade-main-session",
+          sessionFile: legacySessionFile,
+          updatedAt: 1710000000000,
+        },
+      },
+      transcripts: {
+        "upgrade-main-session.jsonl": "legacy transcript",
+      },
+    });
+    const targetDir = path.join(root, "agents", "main", "sessions");
+    const targetStorePath = path.join(targetDir, "sessions.json");
+    seedSqliteSessionEntry({
+      storePath: targetStorePath,
+      key: "agent:main:main",
+      entry: {
+        sessionId: "upgrade-main-session",
+        sessionFile: legacySessionFile,
+        updatedAt: 1710000000000,
+      },
+      updatedAt: 1710000000000,
+    });
+
+    const detected = await detectLegacyStateMigrations({
+      cfg: {},
+      env: { OPENCLAW_STATE_DIR: root } as NodeJS.ProcessEnv,
+    });
+    const result = await runLegacyStateMigrations({
+      detected,
+      now: () => 123,
+    });
+
+    const movedPath = path.join(targetDir, "upgrade-main-session.jsonl");
+    const store = readSessionsStore(targetDir);
+    expect(result.warnings).toStrictEqual([]);
+    expect(fs.existsSync(movedPath)).toBe(true);
+    expect(store["agent:main:main"]?.sessionFile).toBe(movedPath);
   });
 
   it("keeps migrated sessionFile metadata aligned with conflicted transcript moves", async () => {

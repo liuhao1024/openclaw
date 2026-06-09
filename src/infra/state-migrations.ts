@@ -2330,6 +2330,7 @@ function importNormalizedSessionsIntoSqlite(params: {
   store: Record<string, SessionEntryLike>;
   stateDir: string;
   now: () => number;
+  preferIncomingOnTie?: boolean;
 }): { imported: number; acpMigrated: number } {
   const normalized: Record<string, SessionEntry> = { ...loadSqliteSessionStore(params.storePath) };
   let acpMigrated = 0;
@@ -2357,7 +2358,7 @@ function importNormalizedSessionsIntoSqlite(params: {
     normalized[key] = mergeSessionEntry({
       existing: normalized[key],
       incoming: normalizedEntry,
-      preferIncomingOnTie: false,
+      preferIncomingOnTie: params.preferIncomingOnTie ?? false,
     }) as SessionEntry;
   }
   return {
@@ -3370,6 +3371,7 @@ async function migrateLegacySessions(
         store: merged,
         stateDir: detected.stateDir,
         now,
+        preferIncomingOnTie: true,
       });
       imported = result.imported;
       acpMigrated = result.acpMigrated;
