@@ -2145,7 +2145,16 @@ export function registerCapabilityCli(program: Command) {
           catalog.find((candidate) => `${candidate.provider}/${candidate.id}` === target) ??
           catalog.find((candidate) => candidate.id === target);
         if (!entry) {
-          throw new Error(`Model not found: ${target}`);
+          const slashIdx = target.indexOf("/");
+          const provider = slashIdx > 0 ? target.slice(0, slashIdx) : "";
+          const sameProvider = provider
+            ? catalog.filter((c) => c.provider === provider).map((c) => `${c.provider}/${c.id}`)
+            : [];
+          const suggestion =
+            sameProvider.length > 0
+              ? ` Available models from ${provider}: ${sameProvider.join(", ")}.`
+              : "";
+          throw new Error(`Model not found: ${target}.${suggestion}`);
         }
         emitJsonOrText(defaultRuntime, Boolean(opts.json), entry, (value) =>
           JSON.stringify(value, null, 2),

@@ -183,6 +183,12 @@ export const doctorHealthConversionRules = [
     rule: "Detect allowlist/catalog issues for hooks.gmail.model as config findings.",
   },
   {
+    contributionId: "doctor:default-model",
+    conversion: "detect-only",
+    target: ["core/doctor/default-model"],
+    rule: "Detect when the resolved default model is not in the model catalog — typically a model removed in a recent upgrade.",
+  },
+  {
     contributionId: "doctor:tool-result-cap",
     conversion: "detect-only",
     target: ["core/doctor/tool-result-cap"],

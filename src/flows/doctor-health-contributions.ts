@@ -620,6 +620,44 @@ async function runHooksModelHealth(ctx: DoctorHealthFlowContext): Promise<void> 
   }
 }
 
+async function runDefaultModelHealth(ctx: DoctorHealthFlowContext): Promise<void> {
+  const { resolveAgentModelPrimaryValue } = await import("../config/model-input.js");
+  const rawModel = resolveAgentModelPrimaryValue(ctx.cfg.agents?.defaults?.model);
+  if (!rawModel?.trim()) {
+    return;
+  }
+  const { DEFAULT_MODEL, DEFAULT_PROVIDER } = await loadAgentDefaultsModule();
+  const { loadModelCatalog } = await loadModelCatalogModule();
+  const { getModelRefStatus, resolveConfiguredModelRef } = await loadModelSelectionModule();
+  const { note } = await loadNoteModule();
+  const resolved = resolveConfiguredModelRef({
+    cfg: ctx.cfg,
+    defaultProvider: DEFAULT_PROVIDER,
+    defaultModel: DEFAULT_MODEL,
+  });
+  const catalog = await loadModelCatalog({ config: ctx.cfg, readOnly: true });
+  const status = getModelRefStatus({
+    cfg: ctx.cfg,
+    catalog,
+    ref: resolved,
+    defaultProvider: resolved.provider,
+    defaultModel: DEFAULT_MODEL,
+  });
+  if (!status.inCatalog) {
+    const sameProvider = catalog
+      .filter((e) => e.provider === resolved.provider)
+      .map((e) => `${e.provider}/${e.id}`);
+    const hint =
+      sameProvider.length > 0
+        ? `Available: ${sameProvider.join(", ")}.`
+        : "No models found for this provider.";
+    note(
+      `- Default model "${status.key}" not in the model catalog (may fail at runtime). ${hint}`,
+      "Default model",
+    );
+  }
+}
+
 async function runToolResultCapHealth(ctx: DoctorHealthFlowContext): Promise<void> {
   const { resolveAgentContextLimits } = await loadAgentScopeModule();
   const { normalizeAgentId } = await import("../routing/session-key.js");
@@ -1184,6 +1222,12 @@ export function resolveDoctorHealthContributions(): DoctorHealthContribution[] {
       label: "Hooks model",
       healthCheckIds: ["core/doctor/hooks-model"],
       run: runHooksModelHealth,
+    }),
+    createDoctorHealthContribution({
+      id: "doctor:default-model",
+      label: "Default model",
+      healthCheckIds: ["core/doctor/default-model"],
+      run: runDefaultModelHealth,
     }),
     createDoctorHealthContribution({
       id: "doctor:tool-result-cap",
