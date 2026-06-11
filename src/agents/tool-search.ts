@@ -1073,7 +1073,7 @@ function formatUnknownToolError(
         levenshtein(needle, e.name),
       ),
     }))
-    .sort((a, b) => a.dist - b.dist)
+    .toSorted((a, b) => a.dist - b.dist)
     .slice(0, 3);
   const hints = scored.map((s) => `  - ${s.entry.name} (${s.entry.description})`).join("\n");
   return `Unknown tool id: ${needle}. Did you mean:\n${hints}\nUse tool_search to discover available tools.`;
