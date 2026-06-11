@@ -344,6 +344,56 @@ const hooksModelCheck: HealthCheck = {
   },
 };
 
+const defaultModelCheck: HealthCheck = {
+  id: "core/doctor/default-model",
+  kind: "core",
+  description: "Resolved default model is present in the model catalog.",
+  source: "doctor",
+  async detect(ctx) {
+    const { DEFAULT_MODEL, DEFAULT_PROVIDER } = await import("../agents/defaults.js");
+    const { resolveAgentModelPrimaryValue } = await import("../config/model-input.js");
+    const rawModel = resolveAgentModelPrimaryValue(ctx.cfg.agents?.defaults?.model);
+    if (!rawModel?.trim()) {
+      return [];
+    }
+    const { loadModelCatalog } = await import("../agents/model-catalog.js");
+    const { getModelRefStatus, resolveConfiguredModelRef } =
+      await import("../agents/model-selection.js");
+    const resolved = resolveConfiguredModelRef({
+      cfg: ctx.cfg,
+      defaultProvider: DEFAULT_PROVIDER,
+      defaultModel: DEFAULT_MODEL,
+    });
+    const catalog = await loadModelCatalog({ config: ctx.cfg, readOnly: true });
+    const status = getModelRefStatus({
+      cfg: ctx.cfg,
+      catalog,
+      ref: resolved,
+      defaultProvider: resolved.provider,
+      defaultModel: DEFAULT_MODEL,
+    });
+    if (!status.inCatalog) {
+      const sameProvider = catalog
+        .filter((e) => e.provider === resolved.provider)
+        .map((e) => `${e.provider}/${e.id}`);
+      const hint =
+        sameProvider.length > 0
+          ? `Available models from ${resolved.provider}: ${sameProvider.join(", ")}. Update agents.defaults.model in your config.`
+          : "No models found for this provider in the catalog. Check your provider configuration.";
+      return [
+        {
+          checkId: "core/doctor/default-model",
+          severity: "warning",
+          message: `Default model "${status.key}" is not in the model catalog — model was likely removed in a recent upgrade.`,
+          path: "agents.defaults.model",
+          fixHint: hint,
+        },
+      ];
+    }
+    return [];
+  },
+};
+
 const legacyStateCheck: HealthCheck = {
   id: "core/doctor/legacy-state",
   kind: "core",
@@ -955,6 +1005,7 @@ function createConvertedWorkflowChecks(deps: CoreHealthCheckDeps): readonly Heal
     browserCheck,
     openAIOAuthTlsCheck,
     hooksModelCheck,
+    defaultModelCheck,
     bootstrapSizeCheck,
     createProviderCatalogProjectionCheck(deps),
     createRuntimeToolSchemaCheck(deps),
