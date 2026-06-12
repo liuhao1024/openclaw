@@ -845,7 +845,7 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
           deduped.push(entry);
         }
       }
-      return deduped.sort((a, b) => b.score - a.score).slice(0, maxResults);
+      return deduped.toSorted((a, b) => b.score - a.score).slice(0, maxResults);
     }
 
     return strict.slice(0, maxResults);
