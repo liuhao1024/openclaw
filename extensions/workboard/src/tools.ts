@@ -596,6 +596,34 @@ export function createWorkboardTools(params: {
       },
     },
     {
+      name: "workboard_delete",
+      label: "Workboard Delete",
+      description:
+        "Permanently delete a Workboard card and its associated events, attempts, comments, proofs, artifacts, and links. The card must not be claimed by another agent.",
+      parameters: Type.Object(
+        {
+          id: cardIdField(),
+          token: ScopedClaimTokenField,
+        },
+        { additionalProperties: false },
+      ),
+      execute: async (_toolCallId, rawParams) => {
+        const record = rawParams as Record<string, unknown>;
+        const id = readStringParam(record, "id", { required: true });
+        const token = record.token as string | undefined;
+        const card = await store.get(id);
+        if (!card) {
+          throw new Error(`card not found: ${id}`);
+        }
+        if (!canMutateCard(card, ownerId, token)) {
+          throw new Error(
+            `card is claimed by ${card.metadata?.claim?.ownerId ?? "another agent"}.`,
+          );
+        }
+        return jsonResult(await store.delete(id));
+      },
+    },
+    {
       name: "workboard_block",
       label: "Workboard Block",
       description: "Block a claimed Workboard card with a durable reason and release the claim.",

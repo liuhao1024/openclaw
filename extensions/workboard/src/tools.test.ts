@@ -462,4 +462,106 @@ describe("workboard tools", () => {
     );
     expect(Buffer.from(attachment.contentBase64 as string, "base64").toString("utf8")).toBe("done");
   });
+
+  it("deletes an unclaimed card and removes references from parent cards", async () => {
+    const keyed = createMemoryStore();
+    const api = {
+      runtime: {
+        state: {
+          openKeyedStore: vi.fn(() => keyed),
+        },
+      },
+    } as unknown as OpenClawPluginApi;
+    const store = new WorkboardStore(keyed);
+    const tools = new Map(
+      createWorkboardTools({
+        api,
+        store,
+        context: { agentId: "main" } as never,
+      }).map((tool) => [tool.name, tool]),
+    );
+
+    const child = await store.create({ title: "Child card" });
+    const parent = await store.create({ title: "Parent card", parents: [child.id] });
+
+    // Parent should have a link to the child
+    const parentBefore = await store.get(parent.id);
+    expect(parentBefore?.metadata?.links?.some((l) => l.targetCardId === child.id)).toBe(true);
+
+    const result = readPayload(
+      await tools.get("workboard_delete")?.execute("call-del", { id: child.id }),
+    );
+    expect(result).toEqual({ deleted: true });
+
+    // Child should be gone
+    const list = readPayload(await tools.get("workboard_list")?.execute("call-list", {}));
+    expect(list.cards).toEqual([expect.objectContaining({ id: parent.id })]);
+
+    // Parent's link to child should be removed
+    const parentAfter = await store.get(parent.id);
+    expect(
+      parentAfter?.metadata?.links?.filter((l) => l.targetCardId === child.id) ?? [],
+    ).toHaveLength(0);
+  });
+
+  it("requires claim scope to delete a claimed card", async () => {
+    const keyed = createMemoryStore();
+    const api = {
+      runtime: {
+        state: {
+          openKeyedStore: vi.fn(() => keyed),
+        },
+      },
+    } as unknown as OpenClawPluginApi;
+    const store = new WorkboardStore(keyed);
+    const mainTools = new Map(
+      createWorkboardTools({
+        api,
+        store,
+        context: { agentId: "main" } as never,
+      }).map((tool) => [tool.name, tool]),
+    );
+    const otherTools = new Map(
+      createWorkboardTools({
+        api,
+        store,
+        context: { agentId: "other" } as never,
+      }).map((tool) => [tool.name, tool]),
+    );
+
+    const card = await store.create({ title: "Claimed card" });
+    const claimed = await store.claim(card.id, { ownerId: "main" });
+
+    await expect(
+      otherTools.get("workboard_delete")?.execute("call-del", { id: card.id }),
+    ).rejects.toThrow(/claimed by main/);
+
+    const result = readPayload(
+      await mainTools.get("workboard_delete")?.execute("call-del-2", { id: card.id }),
+    );
+    expect(result).toEqual({ deleted: true });
+  });
+
+  it("throws for nonexistent card", async () => {
+    const keyed = createMemoryStore();
+    const api = {
+      runtime: {
+        state: {
+          openKeyedStore: vi.fn(() => keyed),
+        },
+      },
+    } as unknown as OpenClawPluginApi;
+    const store = new WorkboardStore(keyed);
+    const tools = new Map(
+      createWorkboardTools({
+        api,
+        store,
+        context: { agentId: "main" } as never,
+      }).map((tool) => [tool.name, tool]),
+    );
+
+    await expect(
+      tools.get("workboard_delete")?.execute("call-del", { id: "nonexistent" }),
+    ).rejects.toThrow(/card not found/);
+  });
 });

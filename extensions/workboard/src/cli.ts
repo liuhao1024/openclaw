@@ -200,6 +200,25 @@ export function registerWorkboardCli(params: { program: Command; store: Workboar
       }
     });
 
+  workboard
+    .command("delete")
+    .argument("<id>", "Card id or prefix")
+    .description("Permanently delete a Workboard card")
+    .option("--json", "Print JSON", false)
+    .action(async (id: string, options: JsonOptions) => {
+      const cards = await params.store.list();
+      const { card, error } = resolveWorkboardCardByIdOrPrefix(cards, id);
+      if (!card) {
+        throw new Error(error);
+      }
+      const result = await params.store.delete(card.id);
+      if (options.json) {
+        writeJson(result);
+      } else {
+        writeLine(result.deleted ? `deleted ${card.id}` : `card not found: ${id}`);
+      }
+    });
+
   addGatewayClientOptions(
     workboard
       .command("dispatch")
