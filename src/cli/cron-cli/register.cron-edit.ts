@@ -65,6 +65,10 @@ async function loadCronJobForEditSchedulePatch(
   throw new Error("cron.list pagination exceeded maximum pages while looking up cron job");
 }
 
+async function readCronJobForEdit(opts: Record<string, unknown>, id: string): Promise<CronJob> {
+  return (await callGatewayFromCli("cron.get", opts, { id })) as CronJob;
+}
+
 export function registerCronEditCommand(cron: Command) {
   addGatewayClientOptions(
     cron
@@ -247,9 +251,9 @@ export function registerCronEditCommand(cron: Command) {
               scheduleRequest.schedule.kind === "cron" &&
               scheduleRequest.schedule.tz === undefined
             ) {
-              const existing = await loadCronJobForEditSchedulePatch(opts, String(id));
+              const existing = await readCronJobForEdit(opts, String(id));
               patch.schedule =
-                existing?.schedule.kind === "cron" && existing.schedule.tz !== undefined
+                existing.schedule.kind === "cron" && existing.schedule.tz !== undefined
                   ? { ...scheduleRequest.schedule, tz: existing.schedule.tz }
                   : scheduleRequest.schedule;
             } else {

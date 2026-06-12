@@ -77,19 +77,15 @@ describe("cron edit command", () => {
 
   it("preserves timezone without copying stale stagger when --cron replaces expression (#92291)", async () => {
     callGatewayFromCli.mockImplementation(async (method: string) => {
-      if (method === "cron.list") {
+      if (method === "cron.get") {
         return {
-          jobs: [
-            {
-              id: "job-1",
-              schedule: {
-                kind: "cron",
-                expr: "0 * * * *",
-                tz: "America/Phoenix",
-                staggerMs: 120_000,
-              },
-            },
-          ],
+          id: "job-1",
+          schedule: {
+            kind: "cron",
+            expr: "0 * * * *",
+            tz: "America/Phoenix",
+            staggerMs: 120_000,
+          },
         };
       }
       return { ok: true };
@@ -98,11 +94,7 @@ describe("cron edit command", () => {
 
     await program.parseAsync(["edit", "job-1", "--cron", "0 5 * * *"], { from: "user" });
 
-    expect(callGatewayFromCli).toHaveBeenCalledWith("cron.list", expect.anything(), {
-      includeDisabled: true,
-      limit: expect.any(Number),
-      offset: expect.any(Number),
-    });
+    expect(callGatewayFromCli).toHaveBeenCalledWith("cron.get", expect.anything(), { id: "job-1" });
     expect(callGatewayFromCli).toHaveBeenCalledWith("cron.update", expect.anything(), {
       id: "job-1",
       patch: {
@@ -144,19 +136,15 @@ describe("cron edit command", () => {
 
   it("preserves timezone when --cron edits stagger metadata (#92291)", async () => {
     callGatewayFromCli.mockImplementation(async (method: string) => {
-      if (method === "cron.list") {
+      if (method === "cron.get") {
         return {
-          jobs: [
-            {
-              id: "job-1",
-              schedule: {
-                kind: "cron",
-                expr: "0 * * * *",
-                tz: "America/Phoenix",
-                staggerMs: 120_000,
-              },
-            },
-          ],
+          id: "job-1",
+          schedule: {
+            kind: "cron",
+            expr: "0 * * * *",
+            tz: "America/Phoenix",
+            staggerMs: 120_000,
+          },
         };
       }
       return { ok: true };
