@@ -611,7 +611,7 @@ export function setMinimalOutboundSessionPluginRegistryForTests(): void {
         capabilities: { chatTypes: ["direct"] },
       }),
       messaging: {
-        targetResolver: { looksLikeId: ({ raw }: { raw: string }) => raw.endsWith("@im.test") },
+        targetResolver: { looksLikeId: (raw: string) => raw.endsWith("@im.test") },
       },
     },
   ];
