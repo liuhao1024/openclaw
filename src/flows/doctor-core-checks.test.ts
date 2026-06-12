@@ -722,7 +722,7 @@ describe("registerCoreHealthChecks", () => {
     );
   });
 
-  it("reports info severity when default model is not in catalog but provider is configured", async () => {
+  it("reports info severity when default model is not in catalog but custom model registration exists", async () => {
     mocks.loadModelCatalog.mockResolvedValue([]);
     const cfg: OpenClawConfig = {
       agents: {
@@ -752,12 +752,12 @@ describe("registerCoreHealthChecks", () => {
       expect.objectContaining({
         checkId: "core/doctor/default-model",
         severity: "info",
-        message: expect.stringContaining("not in the static model catalog"),
+        message: expect.stringContaining("custom model registration exists"),
       }),
     );
   });
 
-  it("reports warning severity when default model is not in catalog and no provider config", async () => {
+  it("reports warning severity when default model is not in catalog and no custom model registration", async () => {
     mocks.loadModelCatalog.mockResolvedValue([]);
     const cfg: OpenClawConfig = {
       agents: {
@@ -816,5 +816,35 @@ describe("registerCoreHealthChecks", () => {
     });
 
     expect(findings).toEqual([]);
+  });
+
+  it("reports warning for bundled provider without models.providers entry", async () => {
+    mocks.loadModelCatalog.mockResolvedValue([]);
+    const cfg: OpenClawConfig = {
+      agents: {
+        defaults: {
+          model: "google/gemini-2.5-pro",
+        },
+      },
+      // No models.providers.google entry — bundled providers authenticate
+      // through plugin fallback, not through models.providers registration.
+    };
+    const check = getCheck(createCoreHealthChecks(createDeps()), "core/doctor/default-model");
+
+    const findings = await check.detect({
+      mode: "lint",
+      runtime,
+      cfg,
+    });
+
+    expect(findings).toContainEqual(
+      expect.objectContaining({
+        checkId: "core/doctor/default-model",
+        severity: "warning",
+        message: expect.stringContaining("no custom model registration was found"),
+      }),
+    );
+    // Must not imply the provider itself is unconfigured or unauthenticated.
+    expect(findings[0].message).not.toContain("no provider configuration");
   });
 });

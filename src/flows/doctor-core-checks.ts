@@ -373,7 +373,7 @@ const defaultModelCheck: HealthCheck = {
       defaultModel: DEFAULT_MODEL,
     });
     if (!status.inCatalog) {
-      const hasProviderConfig = Boolean(ctx.cfg.models?.providers?.[resolved.provider]);
+      const hasCustomModelRegistration = Boolean(ctx.cfg.models?.providers?.[resolved.provider]);
       const sameProvider = catalog
         .filter((e) => e.provider === resolved.provider)
         .map((e) => `${e.provider}/${e.id}`);
@@ -381,12 +381,12 @@ const defaultModelCheck: HealthCheck = {
         sameProvider.length > 0
           ? `Available models from ${resolved.provider}: ${sameProvider.join(", ")}. Update agents.defaults.model in your config.`
           : "No models found for this provider in the catalog. Verify the model name or check provider documentation.";
-      if (hasProviderConfig) {
+      if (hasCustomModelRegistration) {
         return [
           {
             checkId: "core/doctor/default-model",
             severity: "info",
-            message: `Default model "${status.key}" is not in the static model catalog, but provider "${resolved.provider}" is configured and may resolve it at runtime.`,
+            message: `Default model "${status.key}" is not in the static model catalog, but a custom model registration exists for provider "${resolved.provider}" and may resolve it at runtime.`,
             path: "agents.defaults.model",
             fixHint:
               "If the model fails at runtime, choose a model from the catalog or verify the provider supports this model.",

@@ -644,13 +644,13 @@ async function runDefaultModelHealth(ctx: DoctorHealthFlowContext): Promise<void
     defaultModel: DEFAULT_MODEL,
   });
   if (!status.inCatalog) {
-    const hasProviderConfig = Boolean(ctx.cfg.models?.providers?.[resolved.provider]);
+    const hasCustomModelRegistration = Boolean(ctx.cfg.models?.providers?.[resolved.provider]);
     const sameProvider = catalog
       .filter((e) => e.provider === resolved.provider)
       .map((e) => `${e.provider}/${e.id}`);
-    if (hasProviderConfig) {
+    if (hasCustomModelRegistration) {
       note(
-        `- Default model "${status.key}" not in the static catalog, but provider "${resolved.provider}" is configured and may resolve it at runtime.`,
+        `- Default model "${status.key}" not in the static catalog, but a custom model registration exists for provider "${resolved.provider}" and may resolve it at runtime.`,
         "Default model",
       );
     } else {
