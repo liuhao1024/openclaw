@@ -184,9 +184,13 @@ function ensureUniqueName(base: string, existing: Set<string>): string {
  */
 function looksLikeWindowsAbsolutePath(raw: string): boolean {
   // Drive letter: X:\ or X:/
-  if (/^[A-Za-z]:[\\/]/.test(raw)) return true;
+  if (/^[A-Za-z]:[\\/]/.test(raw)) {
+    return true;
+  }
   // UNC: \\server\share
-  if (raw.startsWith("\\\\")) return true;
+  if (raw.startsWith("\\\\")) {
+    return true;
+  }
   return false;
 }
 
