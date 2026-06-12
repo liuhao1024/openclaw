@@ -5,6 +5,7 @@ import { hasAnyAuthProfileStoreSource } from "../../agents/auth-profiles/source-
 import { resolveAgentHarnessPolicy } from "../../agents/harness/policy.js";
 import { listOpenAIAuthProfileProvidersForAgentRuntime } from "../../agents/openai-routing.js";
 import { expandToolGroups, normalizeToolName } from "../../agents/tool-policy.js";
+import { deriveContextPromptTokens } from "../../agents/usage.js";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import type { CliDeps } from "../../cli/outbound-send-deps.js";
 import {
@@ -17,6 +18,10 @@ import type { AgentDefaultsConfig } from "../../config/types.agent-defaults.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { clearAgentRunContext } from "../../infra/agent-events.js";
 import { emitTrustedDiagnosticEvent, isDiagnosticsEnabled } from "../../infra/diagnostic-events.js";
+import {
+  createChildDiagnosticTraceContext,
+  freezeDiagnosticTraceContext,
+} from "../../infra/diagnostic-trace-context.js";
 import {
   createSourceDeliveryPlan,
   resolveSourceDeliveryOutcome,
@@ -1039,9 +1044,21 @@ async function finalizeCronRun(params: {
       const cacheRead = usage.cacheRead ?? 0;
       const cacheWrite = usage.cacheWrite ?? 0;
       const usagePromptTokens = input + cacheRead + cacheWrite;
+      const contextUsedTokens = deriveContextPromptTokens({
+        lastCallUsage,
+        promptTokens,
+        usage,
+      });
       emitTrustedDiagnosticEvent({
         type: "model.usage",
-        sessionKey: prepared.agentSessionKey,
+        ...(finalRunResult.diagnosticTrace
+          ? {
+              trace: freezeDiagnosticTraceContext(
+                createChildDiagnosticTraceContext(finalRunResult.diagnosticTrace),
+              ),
+            }
+          : {}),
+        sessionKey: prepared.runSessionKey,
         sessionId: prepared.currentRunSessionId(),
         channel: "cron",
         agentId: prepared.agentId,
@@ -1061,9 +1078,10 @@ async function finalizeCronRun(params: {
         lastCallUsage,
         context: {
           limit: contextTokens,
+          ...(contextUsedTokens !== undefined ? { used: contextUsedTokens } : {}),
         },
         costUsd: runEstimatedCostUsd,
-        durationMs: Date.now() - execution.runStartedAt,
+        durationMs: execution.runEndedAt - execution.runStartedAt,
       });
     }
   } else {
