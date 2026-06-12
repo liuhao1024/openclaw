@@ -814,27 +814,41 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
       temporalDecay: hybrid.temporalDecay,
     });
     const strict = merged.filter((entry) => entry.score >= minScore);
-    if (strict.length > 0 || keywordResults.length === 0) {
+    if (keywordResults.length === 0) {
       return strict.slice(0, maxResults);
     }
 
-    // Hybrid defaults can produce keyword-only matches below minScore after
-    // weighting. If strict vector+keyword results are empty, preserve the FTS
-    // matches; FTS already established lexical relevance.
-    const relaxedMinScore = 0;
+    // Always preserve keyword-only results alongside strict vector+keyword
+    // matches. When keyword and vector chunk IDs don't overlap (common with
+    // CJK/trigram queries), keyword results carry valid textScore but get
+    // dropped by minScore because their vectorScore is 0.  These results
+    // represent genuine FTS matches and should not be silently discarded.
     const keywordKeys = new Set(
       keywordResults.map(
         (entry) => `${entry.source}:${entry.path}:${entry.startLine}:${entry.endLine}`,
       ),
     );
-    return this.selectScoredResults(
-      merged.filter((entry) =>
-        keywordKeys.has(`${entry.source}:${entry.path}:${entry.startLine}:${entry.endLine}`),
-      ),
-      maxResults,
-      minScore,
-      relaxedMinScore,
+    const keywordOnly = merged.filter(
+      (entry) =>
+        keywordKeys.has(`${entry.source}:${entry.path}:${entry.startLine}:${entry.endLine}`) &&
+        entry.vectorScore === 0,
     );
+    const combined = [...strict, ...keywordOnly];
+    if (combined.length > 0) {
+      // Deduplicate (keywordOnly is a subset of merged; strict may overlap)
+      const seen = new Set<string>();
+      const deduped: typeof combined = [];
+      for (const entry of combined) {
+        const key = `${entry.source}:${entry.path}:${entry.startLine}:${entry.endLine}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          deduped.push(entry);
+        }
+      }
+      return deduped.sort((a, b) => b.score - a.score).slice(0, maxResults);
+    }
+
+    return strict.slice(0, maxResults);
   }
 
   private selectScoredResults<T extends MemorySearchResult & { score: number }>(

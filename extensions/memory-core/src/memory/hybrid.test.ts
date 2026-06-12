@@ -68,6 +68,47 @@ describe("memory hybrid helpers", () => {
     expect(b?.textScore).toBeCloseTo(1);
   });
 
+  it("mergeHybridResults preserves keyword-only results when IDs don't overlap", async () => {
+    const merged = await mergeHybridResults({
+      vectorWeight: 0.7,
+      textWeight: 0.3,
+      vector: [
+        {
+          id: "v1",
+          path: "memory/vec.md",
+          startLine: 1,
+          endLine: 10,
+          source: "memory",
+          snippet: "vector result",
+          vectorScore: 0.8,
+        },
+      ],
+      keyword: [
+        {
+          id: "k1",
+          path: "memory/kw.md",
+          startLine: 5,
+          endLine: 15,
+          source: "memory",
+          snippet: "keyword result",
+          textScore: 0.9,
+        },
+      ],
+    });
+
+    expect(merged).toHaveLength(2);
+    const vec = merged.find((r) => r.path === "memory/vec.md");
+    const kw = merged.find((r) => r.path === "memory/kw.md");
+    // Vector result keeps textScore 0 (no keyword match for this chunk)
+    expect(vec?.textScore).toBe(0);
+    expect(vec?.vectorScore).toBeCloseTo(0.8);
+    expect(vec?.score).toBeCloseTo(0.7 * 0.8);
+    // Keyword result is preserved with its textScore
+    expect(kw?.textScore).toBeCloseTo(0.9);
+    expect(kw?.vectorScore).toBe(0);
+    expect(kw?.score).toBeCloseTo(0.3 * 0.9);
+  });
+
   it("mergeHybridResults prefers keyword snippet when ids overlap", async () => {
     const merged = await mergeHybridResults({
       vectorWeight: 0.5,
