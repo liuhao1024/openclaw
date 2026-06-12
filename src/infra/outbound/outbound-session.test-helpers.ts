@@ -604,6 +604,16 @@ export function setMinimalOutboundSessionPluginRegistryForTests(): void {
           raw === "team-ops" ? { to: raw, chatType: "group" } : null,
       },
     },
+    {
+      ...createChannelTestPluginBase({
+        id: "directonlychat",
+        label: "Direct Only Chat",
+        capabilities: { chatTypes: ["direct"] },
+      }),
+      messaging: {
+        targetResolver: { looksLikeId: ({ raw }: { raw: string }) => raw.endsWith("@im.test") },
+      },
+    },
   ];
   setActivePluginRegistry(
     createTestRegistry(

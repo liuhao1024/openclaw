@@ -128,6 +128,13 @@ function inferPeerKind(params: {
     if (supportsChannel && !supportsGroup) {
       return "channel";
     }
+    // Direct-only plugins (e.g. WeChat) cannot create group sessions;
+    // bare target IDs that fall through to the "group" default should
+    // route to the existing direct session instead of spawning a phantom
+    // group session.
+    if (!supportsGroup && !supportsChannel && chatTypes.includes("direct")) {
+      return "direct";
+    }
     return "group";
   }
   const plugin = resolveOutboundChannelPlugin(params.channel);

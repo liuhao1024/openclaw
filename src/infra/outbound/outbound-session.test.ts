@@ -412,6 +412,18 @@ describe("resolveOutboundSessionRoute", () => {
         chatType: "group",
       },
     },
+    {
+      name: "Direct-only plugin bare target routes to direct session",
+      cfg: perChannelPeerCfg,
+      channel: "directonlychat",
+      target: "wxid_abc123@im.test",
+      expected: {
+        sessionKey: "agent:main:directonlychat:direct:wxid_abc123@im.test",
+        from: "directonlychat:wxid_abc123@im.test",
+        to: "user:wxid_abc123@im.test",
+        chatType: "direct",
+      },
+    },
   ] satisfies NamedRouteCase[])("$name", async ({ name: _name, ...params }) => {
     await expectResolvedRoute(params);
   });
@@ -466,6 +478,23 @@ describe("resolveOutboundSessionRoute", () => {
         sessionKey: "agent:main:boardchat:direct:dthcxgoxhifn3pwh65cut3ud3w",
         from: "boardchat:dthcxgoxhifn3pwh65cut3ud3w",
         to: "user:dthcxgoxhifn3pwh65cut3ud3w",
+        chatType: "direct",
+      },
+    },
+    {
+      name: "direct-only channel with group-resolved target routes to direct session",
+      target: "wxid_abc123@im.test",
+      channel: "directonlychat",
+      resolvedTarget: {
+        to: "wxid_abc123@im.test",
+        kind: "group" as const,
+        source: "plugin" as const,
+        resolutionSource: "plugin" as const,
+      },
+      expected: {
+        sessionKey: "agent:main:directonlychat:direct:wxid_abc123@im.test",
+        from: "directonlychat:wxid_abc123@im.test",
+        to: "user:wxid_abc123@im.test",
         chatType: "direct",
       },
     },
