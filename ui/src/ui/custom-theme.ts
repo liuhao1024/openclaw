@@ -9,7 +9,7 @@ const MAX_TWEAKCN_THEME_BYTES = 200_000;
 const MAX_CSS_TOKEN_LENGTH = 240;
 const TWEAKCN_FETCH_TIMEOUT_MS = 10_000;
 const DEFAULT_FONT_BODY =
-  '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif';
 const DEFAULT_MONO =
   '"JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace';
 const FORBIDDEN_CSS_VALUE_PARTS = [
