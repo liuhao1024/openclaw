@@ -305,6 +305,9 @@ function registerEventHandlers(
     "im.message.message_read_v1": async () => {
       // Ignore read receipts
     },
+    "im.chat.access_event.bot_p2p_chat_entered_v1": async () => {
+      // Ignore bot chat entered events to prevent gateway restart
+    },
     "im.chat.member.bot.added_v1": async (data) => {
       try {
         const event = parseFeishuBotAddedEventPayload(data);
