@@ -271,10 +271,11 @@ describe("viewerState initialization", () => {
 
     await hydrateViewer();
 
-    const preloadArg = preloadHighlighterMock.mock.calls[0]?.[0] as { langs: string[] };
-    expect(preloadArg.langs).toContain("typescript");
-    expect(preloadArg.langs).toContain("python");
-    expect(preloadArg.themes).toEqual(["pierre-light", "pierre-dark"]);
+    const preloadArg = preloadHighlighterMock.mock.calls[0]?.[0] as { langs: string[]; themes: string[] } | undefined;
+    expect(preloadArg).toBeDefined();
+    expect(preloadArg!.langs).toContain("typescript");
+    expect(preloadArg!.langs).toContain("python");
+    expect(preloadArg!.themes).toEqual(["pierre-light", "pierre-dark"]);
   });
 });
 
