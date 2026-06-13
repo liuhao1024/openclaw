@@ -92,7 +92,14 @@ extension VoiceWakeOverlayController {
 
         let contentHeight = ceil(used.height + (textInset.height * 2))
         let total = contentHeight + self.verticalPadding * 2
-        self.model.isOverflowing = total > self.maxHeight
+        // Defer the overflow state mutation to break the SwiftUI onChange → measuredHeight →
+        // isOverflowing → re-render → onChange synchronous render loop (fixes #43480).
+        let overflowing = total > self.maxHeight
+        if self.model.isOverflowing != overflowing {
+            DispatchQueue.main.async { [weak self] in
+                self?.model.isOverflowing = overflowing
+            }
+        }
         return max(self.minHeight, min(total, self.maxHeight))
     }
 
