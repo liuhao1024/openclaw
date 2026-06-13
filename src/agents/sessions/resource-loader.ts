@@ -109,15 +109,23 @@ export function loadProjectContextFiles(options: {
 
   let currentDir = resolvedCwd;
   const root = resolve("/");
+  // Boundary: stop the ancestor walk at the user's home directory to prevent
+  // loading AGENTS.md / CLAUDE.md from system directories outside the workspace.
+  const homeBoundary = resolve(homedir());
 
   while (true) {
+    // Stop loading from directories outside the home boundary.
+    if (currentDir !== homeBoundary && !currentDir.startsWith(homeBoundary + sep)) {
+      break;
+    }
+
     const contextFile = loadContextFileFromDir(currentDir);
     if (contextFile && !seenPaths.has(contextFile.path)) {
       ancestorContextFiles.unshift(contextFile);
       seenPaths.add(contextFile.path);
     }
 
-    if (currentDir === root) {
+    if (currentDir === homeBoundary || currentDir === root) {
       break;
     }
 
