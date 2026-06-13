@@ -7,6 +7,7 @@ import {
 } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { describe, expect, it } from "vitest";
 import plugin from "./index.js";
+import { normalizeOpenRouterApiModelId } from "./models.js";
 
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 const OPENROUTER_MISTRAL_PROVIDER_PREFIX = "mistralai/";
@@ -91,20 +92,40 @@ describeLive("openrouter plugin live", () => {
     expect(resolved.api).toBe("openai-completions");
     expect(resolved.baseUrl).toBe("https://openrouter.ai/api/v1");
 
-    const normalized = provider.normalizeResolvedModel?.({
-      provider: "openrouter",
-      modelId: resolved.id,
-      model: resolved,
-    });
-    if (!normalized) {
-      throw new Error(`openrouter provider did not normalize ${LIVE_MODEL_ID}`);
-    }
-    expect(normalized.id).toBe(LIVE_MODEL_ID.slice("openrouter/".length));
+    const normalized =
+      provider.normalizeResolvedModel?.({
+        provider: "openrouter",
+        modelId: resolved.id,
+        model: resolved,
+      }) ?? resolved;
+    expect(normalized.id).toBe(normalizeOpenRouterApiModelId(LIVE_MODEL_ID));
 
     const client = new OpenAI({
       apiKey: OPENROUTER_API_KEY,
       baseURL: normalized.baseUrl,
     });
+    const autoResolved = provider.resolveDynamicModel?.({
+      provider: "openrouter",
+      modelId: "openrouter/auto",
+      modelRegistry: new ModelRegistryCtor(AuthStorage.inMemory()),
+    });
+    if (!autoResolved) {
+      throw new Error("openrouter provider did not resolve openrouter/auto");
+    }
+    const autoModel =
+      provider.normalizeResolvedModel?.({
+        provider: "openrouter",
+        modelId: autoResolved.id,
+        model: autoResolved,
+      }) ?? autoResolved;
+    expect(autoModel.id).toBe("openrouter/auto");
+    const autoResponse = await client.chat.completions.create({
+      model: autoModel.id,
+      messages: [{ role: "user", content: "Reply with exactly OK." }],
+      max_tokens: 16,
+    });
+    expect(autoResponse.choices[0]?.message?.content?.trim()).toMatch(/^OK[.!]?$/);
+
     const response = await client.chat.completions.create({
       model: normalized.id,
       messages: [{ role: "user", content: "Call get_weather for Paris." }],
