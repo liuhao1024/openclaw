@@ -163,8 +163,13 @@ function buildDefaultResolveRoute(): ResolvedAgentRoute {
     matchedBy: "default",
   };
 }
+let currentRuntimeConfig = {} as ClawdbotConfig;
+
 function createFeishuBotRuntime(overrides: DeepPartial<PluginRuntime> = {}): PluginRuntime {
   return {
+    config: {
+      current: vi.fn(() => currentRuntimeConfig),
+    },
     channel: {
       routing: {
         resolveAgentRoute: resolveAgentRouteMock,
@@ -413,7 +418,11 @@ afterAll(() => {
   vi.resetModules();
 });
 
-async function dispatchMessage(params: { cfg: ClawdbotConfig; event: FeishuMessageEvent }) {
+async function dispatchMessage(params: {
+  cfg: ClawdbotConfig;
+  currentCfg?: ClawdbotConfig;
+  event: FeishuMessageEvent;
+}) {
   const runtime = createRuntimeEnv();
   const feishuConfig = params.cfg.channels?.feishu;
   const cfg =
@@ -429,6 +438,7 @@ async function dispatchMessage(params: { cfg: ClawdbotConfig; event: FeishuMessa
           },
         } as ClawdbotConfig)
       : params.cfg;
+  currentRuntimeConfig = params.currentCfg ?? cfg;
   await handleFeishuMessage({
     cfg,
     event: params.event,
@@ -1306,13 +1316,9 @@ describe("handleFeishuMessage command authorization", () => {
         },
       },
     } as ClawdbotConfig;
-    mockMaybeCreateDynamicAgent.mockResolvedValueOnce({
-      created: false,
-      updatedCfg: refreshedCfg,
-    });
-
     await dispatchMessage({
       cfg,
+      currentCfg: refreshedCfg,
       event: {
         sender: { sender_id: { open_id: "ou-attacker" } },
         message: {
@@ -1325,9 +1331,54 @@ describe("handleFeishuMessage command authorization", () => {
       },
     });
 
-    expect(mockMaybeCreateDynamicAgent).toHaveBeenCalledTimes(1);
+    expect(mockMaybeCreateDynamicAgent).not.toHaveBeenCalled();
     expect(mockFinalizeInboundContext).not.toHaveBeenCalled();
     expect(mockCreateFeishuReplyDispatcher).not.toHaveBeenCalled();
+    expect(mockDispatchReplyFromConfig).not.toHaveBeenCalled();
+  });
+
+  it("issues a pairing challenge before dynamic creation when current policy requires it", async () => {
+    mockShouldComputeCommandAuthorized.mockReturnValue(false);
+    mockReadAllowFromStore.mockResolvedValue([]);
+    mockUpsertPairingRequest.mockResolvedValue({ code: "ABCDEFGH", created: true });
+
+    const cfg = {
+      channels: {
+        feishu: {
+          dmPolicy: "open",
+          allowFrom: ["*"],
+          dynamicAgentCreation: { enabled: true },
+        },
+      },
+    } as ClawdbotConfig;
+    const currentCfg = {
+      channels: {
+        feishu: {
+          dmPolicy: "pairing",
+          allowFrom: [],
+          dynamicAgentCreation: { enabled: true },
+        },
+      },
+    } as ClawdbotConfig;
+
+    await dispatchMessage({
+      cfg,
+      currentCfg,
+      event: {
+        sender: { sender_id: { open_id: "ou-attacker" } },
+        message: {
+          message_id: "msg-refreshed-policy-pairing",
+          chat_id: "oc-dm",
+          chat_type: "p2p",
+          message_type: "text",
+          content: JSON.stringify({ text: "hello" }),
+        },
+      },
+    });
+
+    expect(mockMaybeCreateDynamicAgent).not.toHaveBeenCalled();
+    expect(mockUpsertPairingRequest).toHaveBeenCalledTimes(1);
+    expect(mockSendMessageFeishu).toHaveBeenCalledTimes(1);
     expect(mockDispatchReplyFromConfig).not.toHaveBeenCalled();
   });
 

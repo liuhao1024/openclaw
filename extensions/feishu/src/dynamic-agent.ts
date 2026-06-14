@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { normalizeAccountId } from "openclaw/plugin-sdk/account-id";
 import { resolveChannelConfigWrites } from "openclaw/plugin-sdk/channel-config-writes";
 import type { OpenClawConfig, PluginRuntime } from "../runtime-api.js";
 import { resolveFeishuAccount } from "./accounts.js";
@@ -18,10 +19,12 @@ type DynamicAgentMutationResult = {
   agentId?: string;
 };
 
-function hasDirectBinding(cfg: OpenClawConfig, senderOpenId: string): boolean {
+function hasDirectBinding(cfg: OpenClawConfig, accountId: string, senderOpenId: string): boolean {
+  const normalizedAccountId = normalizeAccountId(accountId);
   return (cfg.bindings ?? []).some(
     (binding) =>
       binding.match?.channel === "feishu" &&
+      normalizeAccountId(binding.match?.accountId) === normalizedAccountId &&
       binding.match?.peer?.kind === "direct" &&
       binding.match?.peer?.id === senderOpenId,
   );
@@ -58,16 +61,18 @@ export async function maybeCreateDynamicAgent(params: {
   runtime: PluginRuntime;
   accountId: string;
   senderOpenId: string;
+  canCreateForConfig: (cfg: OpenClawConfig) => Promise<boolean>;
   log: (msg: string) => void;
 }): Promise<MaybeCreateDynamicAgentResult> {
-  const { cfg, runtime, accountId, senderOpenId, log } = params;
+  const { cfg, runtime, senderOpenId, canCreateForConfig, log } = params;
+  const accountId = normalizeAccountId(params.accountId);
 
-  if (hasDirectBinding(cfg, senderOpenId)) {
+  if (hasDirectBinding(cfg, accountId, senderOpenId)) {
     return { created: false, updatedCfg: cfg };
   }
 
   const currentCfg = runtime.config.current() as OpenClawConfig;
-  if (hasDirectBinding(currentCfg, senderOpenId)) {
+  if (hasDirectBinding(currentCfg, accountId, senderOpenId)) {
     return { created: false, updatedCfg: currentCfg };
   }
 
@@ -85,6 +90,9 @@ export async function maybeCreateDynamicAgent(params: {
     );
     return { created: false, updatedCfg: currentCfg };
   }
+  if (!(await canCreateForConfig(currentCfg))) {
+    return { created: false, updatedCfg: currentCfg };
+  }
 
   const agentId = `feishu-${senderOpenId}`;
 
@@ -94,7 +102,7 @@ export async function maybeCreateDynamicAgent(params: {
     base: "runtime",
     afterWrite: { mode: "auto" },
     mutate: async (draft) => {
-      if (hasDirectBinding(draft, senderOpenId)) {
+      if (hasDirectBinding(draft, accountId, senderOpenId)) {
         return { created: false };
       }
 
@@ -109,6 +117,9 @@ export async function maybeCreateDynamicAgent(params: {
         log(
           `feishu: maxAgents limit (${dynamicCfg.maxAgents}) reached, not creating agent for ${senderOpenId}`,
         );
+        return { created: false };
+      }
+      if (!(await canCreateForConfig(draft))) {
         return { created: false };
       }
 
@@ -141,6 +152,7 @@ export async function maybeCreateDynamicAgent(params: {
           agentId,
           match: {
             channel: "feishu",
+            accountId,
             peer: { kind: "direct", id: senderOpenId },
           },
         },

@@ -77,6 +77,7 @@ function mockCallArg(mockFn: ReturnType<typeof vi.fn>, label: string, callIndex 
 }
 
 function createTestRuntime(overrides?: {
+  currentCfg?: ClawdbotConfig;
   readAllowFromStore?: () => Promise<unknown[]>;
   upsertPairingRequest?: () => Promise<{ code: string; created: boolean }>;
   resolveAgentRoute?: () => ReturnType<typeof buildResolvedRoute>;
@@ -129,6 +130,9 @@ function createTestRuntime(overrides?: {
   });
 
   return {
+    config: {
+      current: vi.fn(() => overrides?.currentCfg ?? ({} as ClawdbotConfig)),
+    },
     channel: {
       routing: {
         buildAgentSessionKey: vi.fn(
@@ -327,25 +331,27 @@ describe("handleFeishuCommentEvent", () => {
   });
 
   it("passes the resolved account to dynamic agent resolution", async () => {
+    const cfg = buildConfig({
+      channels: {
+        feishu: {
+          enabled: true,
+          dmPolicy: "open",
+          allowFrom: ["*"],
+          configWrites: false,
+          dynamicAgentCreation: {
+            enabled: true,
+          },
+        },
+      },
+    });
     const runtime = createTestRuntime({
+      currentCfg: cfg,
       resolveAgentRoute: () => buildResolvedRoute("default"),
     });
     setFeishuRuntime(runtime);
 
     await handleFeishuCommentEvent({
-      cfg: buildConfig({
-        channels: {
-          feishu: {
-            enabled: true,
-            dmPolicy: "open",
-            allowFrom: ["*"],
-            configWrites: false,
-            dynamicAgentCreation: {
-              enabled: true,
-            },
-          },
-        },
-      }),
+      cfg,
       accountId: "default",
       event: { event_id: "evt_1" },
       botOpenId: "ou_bot",
@@ -368,23 +374,21 @@ describe("handleFeishuCommentEvent", () => {
   });
 
   it("drops a comment denied by refreshed dynamic-agent policy", async () => {
+    const refreshedCfg = buildConfig({
+      channels: {
+        feishu: {
+          enabled: true,
+          dmPolicy: "allowlist",
+          allowFrom: ["ou_admin"],
+        },
+      },
+    });
     const runtime = createTestRuntime({
+      currentCfg: refreshedCfg,
       resolveAgentRoute: () => buildResolvedRoute("default"),
     });
     setFeishuRuntime(runtime);
     const cfg = buildConfig();
-    maybeCreateDynamicAgentMock.mockResolvedValueOnce({
-      created: false,
-      updatedCfg: buildConfig({
-        channels: {
-          feishu: {
-            enabled: true,
-            dmPolicy: "allowlist",
-            allowFrom: ["ou_admin"],
-          },
-        },
-      }),
-    });
 
     await handleFeishuCommentEvent({
       cfg,
@@ -400,8 +404,44 @@ describe("handleFeishuCommentEvent", () => {
     const dispatchReplyFromConfig = runtime.channel.reply.dispatchReplyFromConfig as ReturnType<
       typeof vi.fn
     >;
-    expect(maybeCreateDynamicAgentMock).toHaveBeenCalledTimes(1);
+    expect(maybeCreateDynamicAgentMock).not.toHaveBeenCalled();
     expect(deliverCommentThreadTextMock).not.toHaveBeenCalled();
+    expect(dispatchReplyFromConfig).not.toHaveBeenCalled();
+  });
+
+  it("issues a pairing challenge before dynamic comment-agent creation", async () => {
+    const currentCfg = buildConfig({
+      channels: {
+        feishu: {
+          enabled: true,
+          dmPolicy: "pairing",
+          allowFrom: [],
+          dynamicAgentCreation: { enabled: true },
+        },
+      },
+    });
+    const runtime = createTestRuntime({
+      currentCfg,
+      resolveAgentRoute: () => buildResolvedRoute("default"),
+    });
+    setFeishuRuntime(runtime);
+
+    await handleFeishuCommentEvent({
+      cfg: buildConfig(),
+      accountId: "default",
+      event: { event_id: "evt_1" },
+      botOpenId: "ou_bot",
+      runtime: {
+        log: vi.fn(),
+        error: vi.fn(),
+      } as never,
+    });
+
+    const dispatchReplyFromConfig = runtime.channel.reply.dispatchReplyFromConfig as ReturnType<
+      typeof vi.fn
+    >;
+    expect(maybeCreateDynamicAgentMock).not.toHaveBeenCalled();
+    expect(deliverCommentThreadTextMock).toHaveBeenCalledTimes(1);
     expect(dispatchReplyFromConfig).not.toHaveBeenCalled();
   });
 

@@ -53,7 +53,6 @@ export async function handleFeishuCommentEvent(
   params: HandleFeishuCommentEventParams,
 ): Promise<void> {
   const account = resolveFeishuRuntimeAccount({ cfg: params.cfg, accountId: params.accountId });
-  const feishuCfg = account.config;
   const core = getFeishuRuntime();
   const log = params.runtime?.log ?? console.log;
   const error = params.runtime?.error ?? console.error;
@@ -79,27 +78,35 @@ export async function handleFeishuCommentEvent(
     fileToken: turn.fileToken,
     commentId: turn.commentId,
   });
-  const dmPolicy = feishuCfg?.dmPolicy ?? "pairing";
-  const configAllowFrom = feishuCfg?.allowFrom ?? [];
   const pairing = createChannelPairingController({
     core,
     channel: "feishu",
     accountId: account.accountId,
   });
-  const dmIngress = await resolveFeishuDmIngressAccess({
-    cfg: params.cfg,
-    accountId: account.accountId,
-    dmPolicy,
-    allowFrom: configAllowFrom,
-    readAllowFromStore: pairing.readAllowFromStore,
-    senderOpenId: turn.senderId,
-    senderUserId: turn.senderUserId,
-    conversationId: turn.senderId,
-    mayPair: true,
-  });
-  if (dmIngress.ingress.admission !== "dispatch") {
-    if (dmIngress.ingress.admission === "pairing-required") {
-      const client = createFeishuClient(account);
+  const resolveCommentAuthorization = async (candidateCfg: ClawdbotConfig, mayPair: boolean) => {
+    const candidateAccount = resolveFeishuRuntimeAccount({
+      cfg: candidateCfg,
+      accountId: account.accountId,
+    });
+    const candidateDmPolicy = candidateAccount.config.dmPolicy ?? "pairing";
+    const ingress = await resolveFeishuDmIngressAccess({
+      cfg: candidateCfg,
+      accountId: candidateAccount.accountId,
+      dmPolicy: candidateDmPolicy,
+      allowFrom: candidateAccount.config.allowFrom ?? [],
+      readAllowFromStore: pairing.readAllowFromStore,
+      senderOpenId: turn.senderId,
+      senderUserId: turn.senderUserId,
+      conversationId: turn.senderId,
+      mayPair,
+    });
+    return { account: candidateAccount, cfg: candidateCfg, dmPolicy: candidateDmPolicy, ingress };
+  };
+  const rejectCommentAuthorization = async (
+    authorization: Awaited<ReturnType<typeof resolveCommentAuthorization>>,
+  ) => {
+    if (authorization.ingress.ingress.admission === "pairing-required") {
+      const client = createFeishuClient(authorization.account);
       await pairing.issueChallenge({
         senderId: turn.senderId,
         senderIdLine: `Your Feishu user id: ${turn.senderId}`,
@@ -127,9 +134,13 @@ export async function handleFeishuCommentEvent(
     } else {
       log(
         `feishu[${account.accountId}]: blocked unauthorized comment sender ${turn.senderId} ` +
-          `(dmPolicy=${dmPolicy}, comment=${turn.commentId})`,
+          `(dmPolicy=${authorization.dmPolicy}, comment=${turn.commentId})`,
       );
     }
+  };
+  const commentAuthorization = await resolveCommentAuthorization(params.cfg, true);
+  if (commentAuthorization.ingress.ingress.admission !== "dispatch") {
+    await rejectCommentAuthorization(commentAuthorization);
     return;
   }
 
@@ -144,40 +155,16 @@ export async function handleFeishuCommentEvent(
     },
   });
   if (route.matchedBy === "default") {
-    const dynamicResult = await maybeCreateDynamicAgent({
-      cfg: params.cfg,
-      runtime: core,
-      accountId: account.accountId,
-      senderOpenId: turn.senderId,
-      log: (message) => log(message),
-    });
-    if (dynamicResult.created || dynamicResult.updatedCfg !== params.cfg) {
-      const refreshedAccount = resolveFeishuRuntimeAccount({
-        cfg: dynamicResult.updatedCfg,
-        accountId: account.accountId,
-      });
-      const refreshedDmPolicy = refreshedAccount.config.dmPolicy ?? "pairing";
-      const refreshedDmIngress = await resolveFeishuDmIngressAccess({
-        cfg: dynamicResult.updatedCfg,
-        accountId: refreshedAccount.accountId,
-        dmPolicy: refreshedDmPolicy,
-        allowFrom: refreshedAccount.config.allowFrom ?? [],
-        readAllowFromStore: pairing.readAllowFromStore,
-        senderOpenId: turn.senderId,
-        senderUserId: turn.senderUserId,
-        conversationId: turn.senderId,
-        mayPair: false,
-      });
-      if (refreshedDmIngress.ingress.admission !== "dispatch") {
-        log(
-          `feishu[${account.accountId}]: current policy rejected stale comment sender ${turn.senderId} ` +
-            `before adopting refreshed dynamic route (dmPolicy=${refreshedDmPolicy}, comment=${turn.commentId})`,
-        );
+    const currentCfg = core.config.current() as ClawdbotConfig;
+    if (currentCfg !== effectiveCfg) {
+      const currentAuthorization = await resolveCommentAuthorization(currentCfg, true);
+      if (currentAuthorization.ingress.ingress.admission !== "dispatch") {
+        await rejectCommentAuthorization(currentAuthorization);
         return;
       }
-      effectiveCfg = dynamicResult.updatedCfg;
+      effectiveCfg = currentCfg;
       route = core.channel.routing.resolveAgentRoute({
-        cfg: dynamicResult.updatedCfg,
+        cfg: currentCfg,
         channel: "feishu",
         accountId: account.accountId,
         peer: {
@@ -185,10 +172,46 @@ export async function handleFeishuCommentEvent(
           id: turn.senderId,
         },
       });
-      if (dynamicResult.created) {
-        log(
-          `feishu[${account.accountId}]: dynamic agent created for comment flow, route=${route.sessionKey}`,
+    }
+    if (route.matchedBy === "default") {
+      const dynamicResult = await maybeCreateDynamicAgent({
+        cfg: effectiveCfg,
+        runtime: core,
+        accountId: account.accountId,
+        senderOpenId: turn.senderId,
+        canCreateForConfig: async (candidateCfg) => {
+          const authorization = await resolveCommentAuthorization(candidateCfg, false);
+          return authorization.ingress.ingress.admission === "dispatch";
+        },
+        log: (message) => log(message),
+      });
+      if (dynamicResult.created || dynamicResult.updatedCfg !== effectiveCfg) {
+        const refreshedAuthorization = await resolveCommentAuthorization(
+          dynamicResult.updatedCfg,
+          false,
         );
+        if (refreshedAuthorization.ingress.ingress.admission !== "dispatch") {
+          log(
+            `feishu[${account.accountId}]: current policy rejected stale comment sender ${turn.senderId} ` +
+              `before adopting refreshed dynamic route (dmPolicy=${refreshedAuthorization.dmPolicy}, comment=${turn.commentId})`,
+          );
+          return;
+        }
+        effectiveCfg = dynamicResult.updatedCfg;
+        route = core.channel.routing.resolveAgentRoute({
+          cfg: dynamicResult.updatedCfg,
+          channel: "feishu",
+          accountId: account.accountId,
+          peer: {
+            kind: "direct",
+            id: turn.senderId,
+          },
+        });
+        if (dynamicResult.created) {
+          log(
+            `feishu[${account.accountId}]: dynamic agent created for comment flow, route=${route.sessionKey}`,
+          );
+        }
       }
     }
   }
