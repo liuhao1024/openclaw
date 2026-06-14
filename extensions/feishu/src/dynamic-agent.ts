@@ -110,6 +110,8 @@ export async function maybeCreateDynamicAgent(params: {
   }
   const agentId = resolveDynamicAgentId(accountId, senderOpenId);
   const currentAgentExists = (currentCfg.agents?.list ?? []).some((agent) => agent.id === agentId);
+  // Legacy unscoped agents are indistinguishable from valid default-account state.
+  // Keep maxAgents as a hard cap instead of auto-rebinding or deleting ambiguous user data.
   if (!currentAgentExists && isAtDynamicAgentLimit(currentCfg, currentDynamicCfg)) {
     log(
       `feishu: maxAgents limit (${currentDynamicCfg.maxAgents}) reached, not creating agent for ${senderOpenId}`,

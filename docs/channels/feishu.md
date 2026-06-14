@@ -417,6 +417,8 @@ This is essential for public bots where you want each user to have their own pri
 
 <Note>
 Dynamic bindings include the normalized Feishu `accountId`, so default and named accounts route each sender to the correct dynamic agent.
+
+If a named account created an unscoped dynamic agent on an older release, that legacy agent still counts toward `maxAgents`. Confirm that it is not used by the default account before removing it, or temporarily increase `maxAgents`; OpenClaw cannot safely infer which account owns ambiguous legacy state.
 </Note>
 
 ### Quick setup
