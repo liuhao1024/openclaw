@@ -790,10 +790,10 @@ export async function handleFeishuMessage(params: {
       }
       return;
     }
-
-    const commandAllowFrom = isGroup
-      ? (groupConfig?.allowFrom ?? configAllowFrom)
-      : (dmIngress?.senderAccess.effectiveAllowFrom ?? configAllowFrom);
+    let effectiveDmPolicy = dmPolicy;
+    let effectiveConfigAllowFrom = configAllowFrom;
+    let effectiveDmIngress = dmIngress;
+    let effectiveShouldComputeCommandAuthorized = shouldComputeCommandAuthorized;
 
     // In group chats, the session is scoped to the group, but the *speaker* is the sender.
     // Using a group-scoped From causes the agent to treat different users as the same person.
@@ -844,7 +844,40 @@ export async function handleFeishuMessage(params: {
         log: (msg) => log(msg),
       });
       if (result.created || result.updatedCfg !== cfg) {
+        const refreshedAccount = resolveFeishuRuntimeAccount({
+          cfg: result.updatedCfg,
+          accountId: account.accountId,
+        });
+        const refreshedDmPolicy = refreshedAccount.config.dmPolicy ?? "pairing";
+        const refreshedConfigAllowFrom = refreshedAccount.config.allowFrom ?? [];
+        const refreshedShouldComputeCommandAuthorized =
+          core.channel.commands.shouldComputeCommandAuthorized(commandProbeBody, result.updatedCfg);
+        const refreshedDmIngress = await resolveFeishuDmIngressAccess({
+          cfg: result.updatedCfg,
+          accountId: refreshedAccount.accountId,
+          dmPolicy: refreshedDmPolicy,
+          allowFrom: refreshedConfigAllowFrom,
+          readAllowFromStore: pairing.readAllowFromStore,
+          senderOpenId: ctx.senderOpenId,
+          senderUserId,
+          conversationId: ctx.senderOpenId,
+          mayPair: false,
+          ...(refreshedShouldComputeCommandAuthorized
+            ? { command: { hasControlCommand: true } }
+            : {}),
+        });
+        if (refreshedDmIngress.ingress.admission !== "dispatch") {
+          log(
+            `feishu[${account.accountId}]: current policy rejected stale DM from ${ctx.senderOpenId} ` +
+              `before adopting refreshed dynamic route (dmPolicy=${refreshedDmPolicy})`,
+          );
+          return;
+        }
         effectiveCfg = result.updatedCfg;
+        effectiveDmPolicy = refreshedDmPolicy;
+        effectiveConfigAllowFrom = refreshedConfigAllowFrom;
+        effectiveDmIngress = refreshedDmIngress;
+        effectiveShouldComputeCommandAuthorized = refreshedShouldComputeCommandAuthorized;
         route = core.channel.routing.resolveAgentRoute({
           cfg: result.updatedCfg,
           channel: "feishu",
@@ -858,6 +891,10 @@ export async function handleFeishuMessage(params: {
         }
       }
     }
+
+    const commandAllowFrom = isGroup
+      ? (groupConfig?.allowFrom ?? effectiveConfigAllowFrom)
+      : (effectiveDmIngress?.senderAccess.effectiveAllowFrom ?? effectiveConfigAllowFrom);
 
     const currentConversationId = peerId;
     const parentConversationId = isGroup ? (parentPeer?.id ?? ctx.chatId) : undefined;
@@ -997,15 +1034,18 @@ export async function handleFeishuMessage(params: {
           : audioTranscript;
     const shouldComputeEffectiveCommandAuthorized =
       audioTranscript === undefined
-        ? shouldComputeCommandAuthorized
-        : core.channel.commands.shouldComputeCommandAuthorized(effectiveCommandProbeBody, cfg);
+        ? effectiveShouldComputeCommandAuthorized
+        : core.channel.commands.shouldComputeCommandAuthorized(
+            effectiveCommandProbeBody,
+            effectiveCfg,
+          );
     const commandAuthorized = shouldComputeEffectiveCommandAuthorized
-      ? isDirect && audioTranscript === undefined && dmIngress
-        ? dmIngress.commandAccess.authorized
+      ? isDirect && audioTranscript === undefined && effectiveDmIngress
+        ? effectiveDmIngress.commandAccess.authorized
         : isGroup
           ? (
               await resolveFeishuGroupSenderActivationIngressAccess({
-                cfg,
+                cfg: effectiveCfg,
                 accountId: account.accountId,
                 chatId: ctx.chatId,
                 allowFrom: commandAllowFrom,
@@ -1018,10 +1058,10 @@ export async function handleFeishuMessage(params: {
             ).commandAccess.authorized
           : (
               await resolveFeishuDmIngressAccess({
-                cfg,
+                cfg: effectiveCfg,
                 accountId: account.accountId,
-                dmPolicy,
-                allowFrom: configAllowFrom,
+                dmPolicy: effectiveDmPolicy,
+                allowFrom: effectiveConfigAllowFrom,
                 readAllowFromStore: pairing.readAllowFromStore,
                 senderOpenId: ctx.senderOpenId,
                 senderUserId,

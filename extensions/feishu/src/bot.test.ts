@@ -1285,6 +1285,93 @@ describe("handleFeishuMessage command authorization", () => {
     );
   });
 
+  it("drops a DM denied by refreshed dynamic-agent policy", async () => {
+    mockShouldComputeCommandAuthorized.mockReturnValue(false);
+
+    const cfg = {
+      channels: {
+        feishu: {
+          dmPolicy: "open",
+          allowFrom: ["*"],
+          dynamicAgentCreation: { enabled: true },
+        },
+      },
+    } as ClawdbotConfig;
+    const refreshedCfg = {
+      channels: {
+        feishu: {
+          dmPolicy: "allowlist",
+          allowFrom: ["ou-admin"],
+          dynamicAgentCreation: { enabled: true },
+        },
+      },
+    } as ClawdbotConfig;
+    mockMaybeCreateDynamicAgent.mockResolvedValueOnce({
+      created: false,
+      updatedCfg: refreshedCfg,
+    });
+
+    await dispatchMessage({
+      cfg,
+      event: {
+        sender: { sender_id: { open_id: "ou-attacker" } },
+        message: {
+          message_id: "msg-refreshed-policy-deny",
+          chat_id: "oc-dm",
+          chat_type: "p2p",
+          message_type: "text",
+          content: JSON.stringify({ text: "hello" }),
+        },
+      },
+    });
+
+    expect(mockMaybeCreateDynamicAgent).toHaveBeenCalledTimes(1);
+    expect(mockFinalizeInboundContext).not.toHaveBeenCalled();
+    expect(mockCreateFeishuReplyDispatcher).not.toHaveBeenCalled();
+    expect(mockDispatchReplyFromConfig).not.toHaveBeenCalled();
+  });
+
+  it("recomputes command authorization against refreshed dynamic-agent config", async () => {
+    const cfg = {
+      channels: {
+        feishu: {
+          dmPolicy: "open",
+          allowFrom: ["*"],
+          dynamicAgentCreation: { enabled: true },
+        },
+      },
+    } as ClawdbotConfig;
+    const refreshedCfg = {
+      ...cfg,
+      commands: { useAccessGroups: true },
+    } as ClawdbotConfig;
+    mockShouldComputeCommandAuthorized.mockImplementation((_body, candidateCfg) => {
+      return candidateCfg === refreshedCfg;
+    });
+    mockMaybeCreateDynamicAgent.mockResolvedValueOnce({
+      created: false,
+      updatedCfg: refreshedCfg,
+    });
+
+    await dispatchMessage({
+      cfg,
+      event: {
+        sender: { sender_id: { open_id: "ou-attacker" } },
+        message: {
+          message_id: "msg-refreshed-command-auth",
+          chat_id: "oc-dm",
+          chat_type: "p2p",
+          message_type: "text",
+          content: JSON.stringify({ text: "/status" }),
+        },
+      },
+    });
+
+    expect(mockShouldComputeCommandAuthorized).toHaveBeenCalledWith("/status", refreshedCfg);
+    const context = mockCallArg<{ CommandAuthorized?: boolean }>(mockFinalizeInboundContext, 0, 0);
+    expect(context.CommandAuthorized).toBe(true);
+  });
+
   it("blocks open DMs when a restrictive allowlist does not match", async () => {
     const cfg: ClawdbotConfig = {
       commands: { useAccessGroups: true },

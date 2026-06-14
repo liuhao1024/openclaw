@@ -152,6 +152,29 @@ export async function handleFeishuCommentEvent(
       log: (message) => log(message),
     });
     if (dynamicResult.created || dynamicResult.updatedCfg !== params.cfg) {
+      const refreshedAccount = resolveFeishuRuntimeAccount({
+        cfg: dynamicResult.updatedCfg,
+        accountId: account.accountId,
+      });
+      const refreshedDmPolicy = refreshedAccount.config.dmPolicy ?? "pairing";
+      const refreshedDmIngress = await resolveFeishuDmIngressAccess({
+        cfg: dynamicResult.updatedCfg,
+        accountId: refreshedAccount.accountId,
+        dmPolicy: refreshedDmPolicy,
+        allowFrom: refreshedAccount.config.allowFrom ?? [],
+        readAllowFromStore: pairing.readAllowFromStore,
+        senderOpenId: turn.senderId,
+        senderUserId: turn.senderUserId,
+        conversationId: turn.senderId,
+        mayPair: false,
+      });
+      if (refreshedDmIngress.ingress.admission !== "dispatch") {
+        log(
+          `feishu[${account.accountId}]: current policy rejected stale comment sender ${turn.senderId} ` +
+            `before adopting refreshed dynamic route (dmPolicy=${refreshedDmPolicy}, comment=${turn.commentId})`,
+        );
+        return;
+      }
       effectiveCfg = dynamicResult.updatedCfg;
       route = core.channel.routing.resolveAgentRoute({
         cfg: dynamicResult.updatedCfg,

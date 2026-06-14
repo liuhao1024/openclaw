@@ -367,6 +367,44 @@ describe("handleFeishuCommentEvent", () => {
     expect(dispatchReplyFromConfig).toHaveBeenCalledTimes(1);
   });
 
+  it("drops a comment denied by refreshed dynamic-agent policy", async () => {
+    const runtime = createTestRuntime({
+      resolveAgentRoute: () => buildResolvedRoute("default"),
+    });
+    setFeishuRuntime(runtime);
+    const cfg = buildConfig();
+    maybeCreateDynamicAgentMock.mockResolvedValueOnce({
+      created: false,
+      updatedCfg: buildConfig({
+        channels: {
+          feishu: {
+            enabled: true,
+            dmPolicy: "allowlist",
+            allowFrom: ["ou_admin"],
+          },
+        },
+      }),
+    });
+
+    await handleFeishuCommentEvent({
+      cfg,
+      accountId: "default",
+      event: { event_id: "evt_1" },
+      botOpenId: "ou_bot",
+      runtime: {
+        log: vi.fn(),
+        error: vi.fn(),
+      } as never,
+    });
+
+    const dispatchReplyFromConfig = runtime.channel.reply.dispatchReplyFromConfig as ReturnType<
+      typeof vi.fn
+    >;
+    expect(maybeCreateDynamicAgentMock).toHaveBeenCalledTimes(1);
+    expect(deliverCommentThreadTextMock).not.toHaveBeenCalled();
+    expect(dispatchReplyFromConfig).not.toHaveBeenCalled();
+  });
+
   it("issues a pairing challenge in the comment thread when dmPolicy=pairing", async () => {
     const runtime = createTestRuntime();
     setFeishuRuntime(runtime);
