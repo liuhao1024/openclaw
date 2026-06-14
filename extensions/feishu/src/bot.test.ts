@@ -1222,7 +1222,7 @@ describe("handleFeishuMessage command authorization", () => {
     expect(ensureNoVisibleReplyFallback).toHaveBeenCalledWith("dispatch-complete-no-visible-reply");
   });
 
-  it("passes disabled config-write policy to dynamic agent creation", async () => {
+  it("uses refreshed config for dynamic agent dispatch", async () => {
     mockShouldComputeCommandAuthorized.mockReturnValue(false);
 
     const cfg: ClawdbotConfig = {
@@ -1237,6 +1237,22 @@ describe("handleFeishuMessage command authorization", () => {
         },
       },
     } as ClawdbotConfig;
+    const refreshedCfg = {
+      ...cfg,
+      agents: {
+        list: [
+          {
+            id: "feishu-ou-attacker",
+            workspace: "/tmp/feishu-ou-attacker",
+            agentDir: "/tmp/feishu-ou-attacker/agent",
+          },
+        ],
+      },
+    } as ClawdbotConfig;
+    mockMaybeCreateDynamicAgent.mockResolvedValueOnce({
+      created: false,
+      updatedCfg: refreshedCfg,
+    });
 
     const event: FeishuMessageEvent = {
       sender: {
@@ -1256,12 +1272,17 @@ describe("handleFeishuMessage command authorization", () => {
     await dispatchMessage({ cfg, event });
 
     const dynamicAgentRequest = mockCallArg<{
-      configWritesAllowed?: boolean;
+      accountId?: string;
       senderOpenId?: string;
     }>(mockMaybeCreateDynamicAgent, 0, 0);
     expect(dynamicAgentRequest.senderOpenId).toBe("ou-attacker");
-    expect(dynamicAgentRequest.configWritesAllowed).toBe(false);
-    expect(mockDispatchReplyFromConfig).toHaveBeenCalledTimes(1);
+    expect(dynamicAgentRequest.accountId).toBe("default");
+    expect(mockCreateFeishuReplyDispatcher).toHaveBeenCalledWith(
+      expect.objectContaining({ cfg: refreshedCfg }),
+    );
+    expect(mockDispatchReplyFromConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ cfg: refreshedCfg }),
+    );
   });
 
   it("blocks open DMs when a restrictive allowlist does not match", async () => {

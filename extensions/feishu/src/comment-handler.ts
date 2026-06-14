@@ -1,5 +1,4 @@
 // Feishu plugin module implements comment handler behavior.
-import { resolveChannelConfigWrites } from "openclaw/plugin-sdk/channel-config-writes";
 import { parseStrictNonNegativeInteger } from "openclaw/plugin-sdk/number-runtime";
 import type { ResolvedAgentRoute } from "openclaw/plugin-sdk/routing";
 import { resolveFeishuRuntimeAccount } from "./accounts.js";
@@ -19,7 +18,6 @@ import {
 } from "./monitor.comment.js";
 import { resolveFeishuDmIngressAccess } from "./policy.js";
 import { getFeishuRuntime } from "./runtime.js";
-import type { DynamicAgentCreationConfig } from "./types.js";
 
 type HandleFeishuCommentEventParams = {
   cfg: ClawdbotConfig;
@@ -146,36 +144,28 @@ export async function handleFeishuCommentEvent(
     },
   });
   if (route.matchedBy === "default") {
-    const dynamicCfg = feishuCfg?.dynamicAgentCreation as DynamicAgentCreationConfig | undefined;
-    if (dynamicCfg?.enabled) {
-      const dynamicResult = await maybeCreateDynamicAgent({
-        cfg: params.cfg,
-        runtime: core,
-        senderOpenId: turn.senderId,
-        dynamicCfg,
-        configWritesAllowed: resolveChannelConfigWrites({
-          cfg: params.cfg,
-          channelId: "feishu",
-          accountId: account.accountId,
-        }),
-        log: (message) => log(message),
+    const dynamicResult = await maybeCreateDynamicAgent({
+      cfg: params.cfg,
+      runtime: core,
+      accountId: account.accountId,
+      senderOpenId: turn.senderId,
+      log: (message) => log(message),
+    });
+    if (dynamicResult.created || dynamicResult.updatedCfg !== params.cfg) {
+      effectiveCfg = dynamicResult.updatedCfg;
+      route = core.channel.routing.resolveAgentRoute({
+        cfg: dynamicResult.updatedCfg,
+        channel: "feishu",
+        accountId: account.accountId,
+        peer: {
+          kind: "direct",
+          id: turn.senderId,
+        },
       });
-      if (dynamicResult.created || dynamicResult.updatedCfg !== params.cfg) {
-        effectiveCfg = dynamicResult.updatedCfg;
-        route = core.channel.routing.resolveAgentRoute({
-          cfg: dynamicResult.updatedCfg,
-          channel: "feishu",
-          accountId: account.accountId,
-          peer: {
-            kind: "direct",
-            id: turn.senderId,
-          },
-        });
-        if (dynamicResult.created) {
-          log(
-            `feishu[${account.accountId}]: dynamic agent created for comment flow, route=${route.sessionKey}`,
-          );
-        }
+      if (dynamicResult.created) {
+        log(
+          `feishu[${account.accountId}]: dynamic agent created for comment flow, route=${route.sessionKey}`,
+        );
       }
     }
   }

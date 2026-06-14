@@ -2,7 +2,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { resolveChannelConfigWrites } from "openclaw/plugin-sdk/channel-config-writes";
 import type { OpenClawConfig, PluginRuntime } from "../runtime-api.js";
+import { resolveFeishuAccount } from "./accounts.js";
 import type { DynamicAgentCreationConfig } from "./types.js";
 
 type MaybeCreateDynamicAgentResult = {
@@ -25,24 +27,40 @@ function hasDirectBinding(cfg: OpenClawConfig, senderOpenId: string): boolean {
   );
 }
 
+function resolveDynamicAgentConfig(
+  cfg: OpenClawConfig,
+  accountId: string,
+): DynamicAgentCreationConfig | undefined {
+  return resolveFeishuAccount({ cfg, accountId }).config.dynamicAgentCreation as
+    | DynamicAgentCreationConfig
+    | undefined;
+}
+
+function isAtDynamicAgentLimit(
+  cfg: OpenClawConfig,
+  dynamicCfg: DynamicAgentCreationConfig,
+): boolean {
+  if (dynamicCfg.maxAgents === undefined) {
+    return false;
+  }
+  const feishuAgentCount = (cfg.agents?.list ?? []).filter((agent) =>
+    agent.id.startsWith("feishu-"),
+  ).length;
+  return feishuAgentCount >= dynamicCfg.maxAgents;
+}
+
 /**
- * Check if a dynamic agent should be created for a DM user and create it if needed.
- * This creates a unique agent instance with its own workspace for each DM user.
+ * Refresh an existing DM binding or create its dynamic agent when current
+ * account policy permits config writes.
  */
 export async function maybeCreateDynamicAgent(params: {
   cfg: OpenClawConfig;
   runtime: PluginRuntime;
+  accountId: string;
   senderOpenId: string;
-  dynamicCfg: DynamicAgentCreationConfig;
-  configWritesAllowed: boolean;
   log: (msg: string) => void;
 }): Promise<MaybeCreateDynamicAgentResult> {
-  const { cfg, runtime, senderOpenId, dynamicCfg, configWritesAllowed, log } = params;
-
-  if (!configWritesAllowed) {
-    log(`feishu: config writes disabled, not creating agent for ${senderOpenId}`);
-    return { created: false, updatedCfg: cfg };
-  }
+  const { cfg, runtime, accountId, senderOpenId, log } = params;
 
   if (hasDirectBinding(cfg, senderOpenId)) {
     return { created: false, updatedCfg: cfg };
@@ -53,30 +71,25 @@ export async function maybeCreateDynamicAgent(params: {
     return { created: false, updatedCfg: currentCfg };
   }
 
-  if (dynamicCfg.maxAgents !== undefined) {
-    const feishuAgentCount = (currentCfg.agents?.list ?? []).filter((a) =>
-      a.id.startsWith("feishu-"),
-    ).length;
-    if (feishuAgentCount >= dynamicCfg.maxAgents) {
-      log(
-        `feishu: maxAgents limit (${dynamicCfg.maxAgents}) reached, not creating agent for ${senderOpenId}`,
-      );
-      return { created: false, updatedCfg: currentCfg };
-    }
+  const currentDynamicCfg = resolveDynamicAgentConfig(currentCfg, accountId);
+  if (!currentDynamicCfg?.enabled) {
+    return { created: false, updatedCfg: currentCfg };
+  }
+  if (!resolveChannelConfigWrites({ cfg: currentCfg, channelId: "feishu", accountId })) {
+    log(`feishu: config writes disabled, not creating agent for ${senderOpenId}`);
+    return { created: false, updatedCfg: currentCfg };
+  }
+  if (isAtDynamicAgentLimit(currentCfg, currentDynamicCfg)) {
+    log(
+      `feishu: maxAgents limit (${currentDynamicCfg.maxAgents}) reached, not creating agent for ${senderOpenId}`,
+    );
+    return { created: false, updatedCfg: currentCfg };
   }
 
   const agentId = `feishu-${senderOpenId}`;
-  const workspaceTemplate = dynamicCfg.workspaceTemplate ?? "~/.openclaw/workspace-{agentId}";
-  const agentDirTemplate = dynamicCfg.agentDirTemplate ?? "~/.openclaw/agents/{agentId}/agent";
-  const workspace = resolveUserPath(
-    workspaceTemplate.replace("{userId}", senderOpenId).replace("{agentId}", agentId),
-  );
-  const agentDir = resolveUserPath(
-    agentDirTemplate.replace("{userId}", senderOpenId).replace("{agentId}", agentId),
-  );
 
   // The config mutation lock owns the final duplicate/limit checks. This keeps
-  // simultaneous DM creations from replacing each other's agents or bindings.
+  // simultaneous DM creations and policy updates from producing stale writes.
   const committed = await runtime.config.mutateConfigFile<DynamicAgentMutationResult>({
     base: "runtime",
     afterWrite: { mode: "auto" },
@@ -85,19 +98,30 @@ export async function maybeCreateDynamicAgent(params: {
         return { created: false };
       }
 
-      if (dynamicCfg.maxAgents !== undefined) {
-        const feishuAgentCount = (draft.agents?.list ?? []).filter((agent) =>
-          agent.id.startsWith("feishu-"),
-        ).length;
-        if (feishuAgentCount >= dynamicCfg.maxAgents) {
-          log(
-            `feishu: maxAgents limit (${dynamicCfg.maxAgents}) reached, not creating agent for ${senderOpenId}`,
-          );
-          return { created: false };
-        }
+      const dynamicCfg = resolveDynamicAgentConfig(draft, accountId);
+      if (
+        !dynamicCfg?.enabled ||
+        !resolveChannelConfigWrites({ cfg: draft, channelId: "feishu", accountId })
+      ) {
+        return { created: false };
+      }
+      if (isAtDynamicAgentLimit(draft, dynamicCfg)) {
+        log(
+          `feishu: maxAgents limit (${dynamicCfg.maxAgents}) reached, not creating agent for ${senderOpenId}`,
+        );
+        return { created: false };
       }
 
       if (!(draft.agents?.list ?? []).some((agent) => agent.id === agentId)) {
+        const workspaceTemplate = dynamicCfg.workspaceTemplate ?? "~/.openclaw/workspace-{agentId}";
+        const agentDirTemplate =
+          dynamicCfg.agentDirTemplate ?? "~/.openclaw/agents/{agentId}/agent";
+        const workspace = resolveUserPath(
+          workspaceTemplate.replace("{userId}", senderOpenId).replace("{agentId}", agentId),
+        );
+        const agentDir = resolveUserPath(
+          agentDirTemplate.replace("{userId}", senderOpenId).replace("{agentId}", agentId),
+        );
         log(`feishu: creating dynamic agent "${agentId}" for user ${senderOpenId}`);
         log(`  workspace: ${workspace}`);
         log(`  agentDir: ${agentDir}`);

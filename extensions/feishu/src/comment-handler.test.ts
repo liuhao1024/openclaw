@@ -326,7 +326,7 @@ describe("handleFeishuCommentEvent", () => {
     expect(deliverCommentThreadTextMock).not.toHaveBeenCalled();
   });
 
-  it("passes disabled config-write policy to dynamic agent creation", async () => {
+  it("passes the resolved account to dynamic agent resolution", async () => {
     const runtime = createTestRuntime({
       resolveAgentRoute: () => buildResolvedRoute("default"),
     });
@@ -357,10 +357,10 @@ describe("handleFeishuCommentEvent", () => {
 
     expect(maybeCreateDynamicAgentMock).toHaveBeenCalledTimes(1);
     const dynamicAgentArgs = mockCallArg(maybeCreateDynamicAgentMock, "maybeCreateDynamicAgent") as
-      | { configWritesAllowed?: boolean; senderOpenId?: string }
+      | { accountId?: string; senderOpenId?: string }
       | undefined;
     expect(dynamicAgentArgs?.senderOpenId).toBe("ou_sender");
-    expect(dynamicAgentArgs?.configWritesAllowed).toBe(false);
+    expect(dynamicAgentArgs?.accountId).toBe("default");
     const dispatchReplyFromConfig = runtime.channel.reply.dispatchReplyFromConfig as ReturnType<
       typeof vi.fn
     >;

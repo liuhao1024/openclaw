@@ -1,5 +1,4 @@
 // Feishu plugin module implements bot behavior.
-import { resolveChannelConfigWrites } from "openclaw/plugin-sdk/channel-config-writes";
 import {
   buildChannelInboundEventContext,
   toInboundMediaFacts,
@@ -74,7 +73,6 @@ import {
   type FeishuMessageInfo,
   type ResolvedFeishuAccount,
 } from "./types.js";
-import type { DynamicAgentCreationConfig } from "./types.js";
 
 export { toMessageResourceType } from "./bot-content.js";
 
@@ -833,38 +831,30 @@ export async function handleFeishuMessage(params: {
       parentPeer,
     });
 
-    // Dynamic agent creation for DM users
-    // When enabled, creates a unique agent instance with its own workspace for each DM user.
+    // Refresh a binding written after this request snapshot, or create the DM's
+    // dynamic agent when the current account policy enables it.
     let effectiveCfg = cfg;
     if (!isGroup && route.matchedBy === "default") {
-      const dynamicCfg = feishuCfg?.dynamicAgentCreation as DynamicAgentCreationConfig | undefined;
-      if (dynamicCfg?.enabled) {
-        const runtimeLocal = getFeishuRuntime();
-        const result = await maybeCreateDynamicAgent({
-          cfg,
-          runtime: runtimeLocal,
-          senderOpenId: ctx.senderOpenId,
-          dynamicCfg,
-          configWritesAllowed: resolveChannelConfigWrites({
-            cfg,
-            channelId: "feishu",
-            accountId: account.accountId,
-          }),
-          log: (msg) => log(msg),
+      const runtimeLocal = getFeishuRuntime();
+      const result = await maybeCreateDynamicAgent({
+        cfg,
+        runtime: runtimeLocal,
+        accountId: account.accountId,
+        senderOpenId: ctx.senderOpenId,
+        log: (msg) => log(msg),
+      });
+      if (result.created || result.updatedCfg !== cfg) {
+        effectiveCfg = result.updatedCfg;
+        route = core.channel.routing.resolveAgentRoute({
+          cfg: result.updatedCfg,
+          channel: "feishu",
+          accountId: account.accountId,
+          peer: { kind: "direct", id: ctx.senderOpenId },
         });
-        if (result.created || result.updatedCfg !== cfg) {
-          effectiveCfg = result.updatedCfg;
-          route = core.channel.routing.resolveAgentRoute({
-            cfg: result.updatedCfg,
-            channel: "feishu",
-            accountId: account.accountId,
-            peer: { kind: "direct", id: ctx.senderOpenId },
-          });
-          if (result.created) {
-            log(
-              `feishu[${account.accountId}]: dynamic agent created, new route: ${route.sessionKey}`,
-            );
-          }
+        if (result.created) {
+          log(
+            `feishu[${account.accountId}]: dynamic agent created, new route: ${route.sessionKey}`,
+          );
         }
       }
     }
@@ -1691,19 +1681,19 @@ export async function handleFeishuMessage(params: {
         ctx.mentionedBot,
       );
 
-      const identity = resolveAgentOutboundIdentity(cfg, route.agentId);
-      const storePath = core.channel.session.resolveStorePath(cfg.session?.store, {
+      const identity = resolveAgentOutboundIdentity(effectiveCfg, route.agentId);
+      const storePath = core.channel.session.resolveStorePath(effectiveCfg.session?.store, {
         agentId: route.agentId,
       });
       const allowReasoningPreview = resolveFeishuReasoningPreviewEnabled({
-        cfg,
+        cfg: effectiveCfg,
         agentId: route.agentId,
         storePath,
         sessionKey: route.sessionKey,
       });
       const { dispatcher, replyOptions, markDispatchIdle, ensureNoVisibleReplyFallback } =
         createFeishuReplyDispatcher({
-          cfg,
+          cfg: effectiveCfg,
           agentId: route.agentId,
           runtime: runtime as RuntimeEnv,
           chatId: ctx.chatId,
@@ -1772,7 +1762,7 @@ export async function handleFeishuMessage(params: {
                 run: () =>
                   core.channel.reply.dispatchReplyFromConfig({
                     ctx: ctxPayload,
-                    cfg,
+                    cfg: effectiveCfg,
                     dispatcher,
                     replyOptions,
                   }),
