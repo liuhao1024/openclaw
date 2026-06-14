@@ -1138,6 +1138,12 @@ export function wrapToolWithBeforeToolCallHook(
   if (!execute) {
     return tool;
   }
+  // Prevent double-wrapping: if the tool already carries the marker (e.g. because
+  // normalizeToolParameters preserved it through copyBeforeToolCallHookMarker),
+  // skip wrapping to avoid nested before_tool_call hooks firing multiple times.
+  if (isToolWrappedWithBeforeToolCallHook(tool)) {
+    return tool;
+  }
   const toolName = tool.name || "tool";
   const diagnosticIdentity = resolveToolDiagnosticIdentity(tool);
   const hookOptions: BeforeToolCallWrapperOptions = {

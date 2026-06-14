@@ -10,6 +10,7 @@ import {
 } from "./agent-tools-parameter-schema.js";
 import type { AnyAgentTool } from "./agent-tools.types.js";
 import { copyChannelAgentToolMeta } from "./channel-tools.js";
+import { copyBeforeToolCallHookMarker } from "./agent-tools.before-tool-call.js";
 
 export { normalizeToolParameterSchema };
 
@@ -72,6 +73,10 @@ export function normalizeToolParameters(
   function preserveToolMeta(target: AnyAgentTool): AnyAgentTool {
     copyPluginToolMeta(tool, target);
     copyChannelAgentToolMeta(tool as never, target as never);
+    // Object spread strips Symbol-keyed properties (like BEFORE_TOOL_CALL_WRAPPED),
+    // so explicitly copy the before_tool_call hook marker to prevent double-wrapping
+    // when the normalized tool flows through wrapToolWithBeforeToolCallHook again.
+    copyBeforeToolCallHookMarker(tool, target);
     return target;
   }
   const schema =
