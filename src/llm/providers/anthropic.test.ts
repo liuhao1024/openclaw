@@ -242,45 +242,99 @@ describe("Anthropic provider", () => {
     expect(result.responseModel).toBe("claude-fable-5");
   });
 
-  it("strips thinking blocks from history when thinking is explicitly disabled", async () => {
-    let capturedPayload: unknown;
-    const client = {
-      messages: {
-        create: vi.fn(() => ({
-          asResponse: () =>
-            Promise.resolve(
-              createSseResponse([
+  it.each([
+    {
+      label: "omitted",
+      thinkingEnabled: undefined,
+      expectedThinking: undefined,
+      visibleText: undefined,
+      expectedContent: [{ type: "text", text: "[assistant reasoning omitted]" }],
+    },
+    {
+      label: "explicitly disabled",
+      thinkingEnabled: false,
+      expectedThinking: { type: "disabled" },
+      visibleText: "Visible answer.",
+      expectedContent: [{ type: "text", text: "Visible answer." }],
+    },
+  ])(
+    "omits completed-turn thinking when thinking is $label",
+    async ({ thinkingEnabled, expectedThinking, visibleText, expectedContent }) => {
+      let capturedPayload: unknown;
+      const stream = streamAnthropic(
+        makeAnthropicModel(),
+        {
+          messages: [
+            { role: "user", content: "hello", timestamp: 0 },
+            {
+              role: "assistant",
+              provider: "anthropic",
+              api: "anthropic-messages",
+              model: "claude-sonnet-4-6",
+              stopReason: "stop",
+              timestamp: 0,
+              usage: {
+                input: 0,
+                output: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
+                totalTokens: 0,
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+              },
+              content: [
                 {
-                  type: "message_start",
-                  message: {
-                    id: "msg_1",
-                    model: "claude-sonnet-4-6",
-                    usage: { input_tokens: 1, output_tokens: 0 },
-                  },
+                  type: "thinking",
+                  thinking: "private reasoning",
+                  thinkingSignature: "sig_1",
                 },
                 {
-                  type: "message_delta",
-                  delta: { stop_reason: "end_turn" },
-                  usage: { input_tokens: 1, output_tokens: 1 },
+                  type: "thinking",
+                  thinking: "[Reasoning redacted]",
+                  thinkingSignature: "opaque_1",
+                  redacted: true,
                 },
-                { type: "message_stop" },
-              ]),
-            ),
-        })),
-      },
-    };
+                ...(visibleText ? [{ type: "text" as const, text: visibleText }] : []),
+              ],
+            },
+            { role: "user", content: "again", timestamp: 0 },
+          ],
+        },
+        {
+          apiKey: "sk-ant-provider",
+          thinkingEnabled,
+          onPayload: (payload) => {
+            capturedPayload = payload;
+            throw new Error("stop before network");
+          },
+        },
+      );
 
+      await stream.result();
+
+      const payload = capturedPayload as {
+        messages: Array<{ role: string; content: unknown[] }>;
+        thinking?: unknown;
+      };
+      expect(payload.thinking).toEqual(expectedThinking);
+      expect(payload.messages.find((message) => message.role === "assistant")?.content).toEqual(
+        expectedContent,
+      );
+    },
+  );
+
+  it("preserves signed thinking for an active tool turn when new thinking is disabled", async () => {
+    let capturedPayload: unknown;
     const stream = streamAnthropic(
       makeAnthropicModel(),
       {
         messages: [
-          { role: "user", content: "hello", timestamp: 0 },
+          { role: "user", content: "look it up", timestamp: 0 },
           {
             role: "assistant",
             provider: "anthropic",
             api: "anthropic-messages",
             model: "claude-sonnet-4-6",
-            stopReason: "stop",
+            stopReason: "toolUse",
             timestamp: 0,
             usage: {
               input: 0,
@@ -293,47 +347,41 @@ describe("Anthropic provider", () => {
             content: [
               {
                 type: "thinking",
-                thinking: "deep reasoning about the answer",
-                thinkingSignature: "sig_1",
+                thinking: "call lookup",
+                thinkingSignature: "sig_tool",
               },
-              {
-                type: "text",
-                text: "Here is the answer.",
-              },
+              { type: "toolCall", id: "call_1", name: "lookup", arguments: {} },
             ],
           },
-          { role: "user", content: "again", timestamp: 0 },
+          {
+            role: "toolResult",
+            toolCallId: "call_1",
+            toolName: "lookup",
+            content: [{ type: "text", text: "42" }],
+            isError: false,
+            timestamp: 0,
+          },
         ],
       },
       {
-        apiKey: "***",
-        client: client as never,
+        apiKey: "sk-ant-provider",
         thinkingEnabled: false,
         onPayload: (payload) => {
           capturedPayload = payload;
+          throw new Error("stop before network");
         },
       },
     );
 
     await stream.result();
 
-    const payload = capturedPayload as { messages: Array<{ role: string; content: unknown[] }> };
-    const assistantMessage = payload.messages.find((message) => message.role === "assistant");
-    // Thinking block with signature should be converted to plain text, not sent as thinking type
-    expect(assistantMessage?.content).toEqual([
-      {
-        type: "text",
-        text: "deep reasoning about the answer",
-      },
-      {
-        type: "text",
-        text: "Here is the answer.",
-      },
+    const payload = capturedPayload as {
+      messages: Array<{ role: string; content: unknown[] }>;
+    };
+    expect(payload.messages.find((message) => message.role === "assistant")?.content).toEqual([
+      { type: "thinking", thinking: "call lookup", signature: "sig_tool" },
+      { type: "tool_use", id: "call_1", name: "lookup", input: {} },
     ]);
-    // No thinking or redacted_thinking blocks should be present
-    const contentStr = JSON.stringify(assistantMessage?.content);
-    expect(contentStr).not.toContain('"type":"thinking"');
-    expect(contentStr).not.toContain('"type":"redacted_thinking"');
   });
 
   it.each([

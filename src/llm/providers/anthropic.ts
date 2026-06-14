@@ -50,6 +50,10 @@ import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { headersToRecord } from "../utils/headers.js";
 import { parseJsonWithRepair, parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
+import {
+  ANTHROPIC_OMITTED_REASONING_TEXT,
+  findActiveAnthropicToolTurnAssistantIndex,
+} from "./anthropic-thinking-replay.js";
 import { resolveCloudflareBaseUrl } from "./cloudflare.js";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.js";
 import { adjustMaxTokensForThinking, buildBaseOptions } from "./simple-options.js";
@@ -1054,6 +1058,8 @@ function buildParams(
   isOAuthTokenResult: boolean,
   options?: AnthropicOptions,
 ): MessageCreateParamsStreaming {
+  const fable5 = usesClaudeFable5MessagesContract(model);
+  const replayThinkingEnabled = fable5 || options?.thinkingEnabled === true;
   const { cacheControl } = getCacheControl(model, options?.cacheRetention);
   const system = buildAnthropicSystemBlocks(context.systemPrompt, isOAuthTokenResult, cacheControl);
   const compat = context.tools?.length ? getAnthropicCompat(model) : undefined;
@@ -1080,7 +1086,7 @@ function buildParams(
       isOAuthTokenResult,
       cacheControl,
       messageCacheControlLimit,
-      options?.thinkingEnabled,
+      replayThinkingEnabled,
     ),
     max_tokens: options?.maxTokens ?? model.maxTokens,
     stream: true,
@@ -1110,7 +1116,6 @@ function buildParams(
   // Configure thinking mode: always-on adaptive (Fable 5), adaptive (Opus
   // 4.6+ and Sonnet 4.6),
   // budget-based (older models), or explicitly disabled.
-  const fable5 = usesClaudeFable5MessagesContract(model);
   if (fable5 || model.reasoning || supportsAdaptiveThinking(model)) {
     if (fable5 || options?.thinkingEnabled) {
       // Default to "summarized" so Opus 4.7+ and Mythos Preview behave like
@@ -1167,12 +1172,15 @@ function convertMessages(
   isOAuthTokenValue: boolean,
   cacheControl?: CacheControlEphemeral,
   messageCacheControlLimit = 4,
-  thinkingEnabled?: boolean,
+  replayThinkingEnabled = true,
 ): MessageParam[] {
   const params: MessageParam[] = [];
 
   // Transform messages for cross-provider compatibility
   const transformedMessages = transformMessages(messages, model, normalizeToolCallId);
+  const activeToolTurnAssistantIndex = replayThinkingEnabled
+    ? -1
+    : findActiveAnthropicToolTurnAssistantIndex(transformedMessages);
 
   for (let i = 0; i < transformedMessages.length; i++) {
     const msg = transformedMessages[i];
@@ -1218,6 +1226,7 @@ function convertMessages(
       }
     } else if (msg.role === "assistant") {
       const blocks: ContentBlockParam[] = [];
+      let omittedThinking = false;
 
       for (const block of msg.content) {
         if (block.type === "text") {
@@ -1229,16 +1238,8 @@ function convertMessages(
             text: sanitizeSurrogates(block.text),
           });
         } else if (block.type === "thinking") {
-          // When thinking is explicitly disabled for the current request, Anthropic
-          // rejects history containing thinking/redacted_thinking blocks. Strip them
-          // and convert to plain text where possible to preserve context.
-          if (thinkingEnabled === false) {
-            if (!block.redacted && block.thinking?.trim()) {
-              blocks.push({
-                type: "text",
-                text: sanitizeSurrogates(block.thinking),
-              });
-            }
+          if (!replayThinkingEnabled && i !== activeToolTurnAssistantIndex) {
+            omittedThinking = true;
             continue;
           }
           // Redacted thinking: pass the opaque payload back as redacted_thinking
@@ -1283,6 +1284,9 @@ function convertMessages(
             input: block.arguments ?? {},
           });
         }
+      }
+      if (blocks.length === 0 && omittedThinking) {
+        blocks.push({ type: "text", text: ANTHROPIC_OMITTED_REASONING_TEXT });
       }
       if (blocks.length === 0) {
         continue;
