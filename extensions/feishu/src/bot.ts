@@ -1477,8 +1477,8 @@ export async function handleFeishuMessage(params: {
         : undefined;
     const pinnedMainDmOwner = !isGroup
       ? resolvePinnedMainDmOwnerFromAllowlist({
-          dmScope: cfg.session?.dmScope,
-          allowFrom: configAllowFrom,
+          dmScope: effectiveCfg.session?.dmScope,
+          allowFrom: effectiveConfigAllowFrom,
           normalizeEntry: normalizeFeishuAllowEntry,
         })
       : null;

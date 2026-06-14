@@ -232,32 +232,9 @@ describe("maybeCreateDynamicAgent", () => {
 
   it("scopes bindings to the normalized account id", async () => {
     const cfg = {
-      channels: {
-        feishu: {
-          dynamicAgentCreation: {
-            ...createDynamicConfig(),
-            maxAgents: 1,
-          },
-        },
-      },
-      agents: {
-        list: [
-          {
-            id: "feishu-ou_sender",
-            workspace: path.join(tempRoot, "existing-workspace"),
-            agentDir: path.join(tempRoot, "existing-agent"),
-          },
-        ],
-      },
-      bindings: [
-        {
-          agentId: "feishu-ou_sender",
-          match: {
-            channel: "feishu",
-            peer: { kind: "direct", id: "ou_sender" },
-          },
-        },
-      ],
+      channels: { feishu: { dynamicAgentCreation: createDynamicConfig() } },
+      agents: { list: [] },
+      bindings: [],
     } as OpenClawConfig;
     const { runtime } = createRuntime(cfg);
 
@@ -271,10 +248,10 @@ describe("maybeCreateDynamicAgent", () => {
     });
 
     expect(result.created).toBe(true);
+    expect(result.agentId).toBe("feishu-ops-team-ou_sender");
     expect(result.updatedCfg.bindings).toEqual([
-      cfg.bindings?.[0],
       {
-        agentId: "feishu-ou_sender",
+        agentId: "feishu-ops-team-ou_sender",
         match: {
           channel: "feishu",
           accountId: "ops-team",

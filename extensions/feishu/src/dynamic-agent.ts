@@ -94,7 +94,8 @@ export async function maybeCreateDynamicAgent(params: {
     log(`feishu: config writes disabled, not creating agent for ${senderOpenId}`);
     return { created: false, updatedCfg: currentCfg };
   }
-  const agentId = `feishu-${senderOpenId}`;
+  const agentId =
+    accountId === "default" ? `feishu-${senderOpenId}` : `feishu-${accountId}-${senderOpenId}`;
   const currentAgentExists = (currentCfg.agents?.list ?? []).some((agent) => agent.id === agentId);
   if (!currentAgentExists && isAtDynamicAgentLimit(currentCfg, currentDynamicCfg)) {
     log(
