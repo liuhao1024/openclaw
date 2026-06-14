@@ -274,7 +274,12 @@ export async function sendText(ctx: OutboundContext): Promise<OutboundResult> {
   }
 
   if (!account.appId || !account.clientSecret) {
-    return { channel: "qqbot", error: "QQBot not configured (missing appId or clientSecret)" };
+    return {
+      channel: "qqbot",
+      error:
+        "QQBot not configured. Set QQBOT_APP_ID and QQBOT_CLIENT_SECRET, or run `openclaw configure`. " +
+        "See: https://docs.openclaw.ai/channels/qqbot",
+    };
   }
 
   try {
@@ -311,7 +316,12 @@ export async function sendMedia(ctx: MediaOutboundContext): Promise<OutboundResu
   initApiConfig(account.appId, { markdownSupport: account.markdownSupport });
 
   if (!account.appId || !account.clientSecret) {
-    return { channel: "qqbot", error: "QQBot not configured (missing appId or clientSecret)" };
+    return {
+      channel: "qqbot",
+      error:
+        "QQBot not configured. Set QQBOT_APP_ID and QQBOT_CLIENT_SECRET, or run `openclaw configure`. " +
+        "See: https://docs.openclaw.ai/channels/qqbot",
+    };
   }
   if (!ctx.mediaUrl) {
     return { channel: "qqbot", error: "mediaUrl is required for sendMedia" };

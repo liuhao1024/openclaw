@@ -296,7 +296,10 @@ export class TokenManager {
       }
 
       if (!data.access_token) {
-        throw new Error(`Failed to get access_token: ${JSON.stringify(data)}`);
+        throw new Error(
+          `Failed to get QQBot access token. Check that QQBOT_APP_ID and QQBOT_CLIENT_SECRET are correct. ` +
+            `Get credentials at: https://q.qq.com/ — Docs: https://docs.openclaw.ai/channels/qqbot`,
+        );
       }
 
       const nowMs = asDateTimestampMs(Date.now());

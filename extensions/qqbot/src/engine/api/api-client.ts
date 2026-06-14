@@ -129,7 +129,11 @@ export class ApiClient {
         throw new ApiError(`Request timeout [${path}]: exceeded ${timeout}ms`, 0, path);
       }
       this.logger?.error?.(`[qqbot:api] <<< Network error: ${formatErrorMessage(err)}`);
-      throw new ApiError(`Network error [${path}]: ${formatErrorMessage(err)}`, 0, path);
+      throw new ApiError(
+        `QQBot API request failed [${path}]: ${formatErrorMessage(err)}. Check your network connection and that your server IP is whitelisted at https://q.qq.com/ — Docs: https://docs.openclaw.ai/channels/qqbot`,
+        0,
+        path,
+      );
     } finally {
       clearTimeout(timeoutId);
     }

@@ -39,7 +39,10 @@ export async function startGateway(ctx: CoreGatewayContext): Promise<void> {
   initCommands(adapters.commands);
 
   if (!account.appId || !account.clientSecret) {
-    throw new Error("QQBot not configured (missing appId or clientSecret)");
+    throw new Error(
+      "QQBot not configured. Set QQBOT_APP_ID and QQBOT_CLIENT_SECRET, or run `openclaw configure`. " +
+        "See: https://docs.openclaw.ai/channels/qqbot",
+    );
   }
 
   const diag = await runDiagnostics();
