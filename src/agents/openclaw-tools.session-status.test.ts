@@ -887,7 +887,7 @@ describe("session_status tool", () => {
     expect(details.sessionKey).toBe("main");
   });
 
-  it("applies the active run model when current resolves to the live requester session", async () => {
+  it("does not apply the active run model to the resolved current session", async () => {
     resetSessionStore({
       main: {
         sessionId: "s-main",
@@ -910,11 +910,13 @@ describe("session_status tool", () => {
     expect(details.sessionKey).toBe("main");
 
     const statusArg = mockCallArg(buildStatusMessageMock) as Record<string, unknown>;
-    // Since "current" now resolves to "main" (the live session), the active model identity
-    // is applied — this is correct behavior for the running session.
+    expectRecordFields(statusArg.sessionEntry, {
+      providerOverride: "anthropic",
+      modelOverride: "claude-sonnet-4-6",
+    });
     const agent = statusArg.agent as Record<string, unknown>;
     const model = agent.model as Record<string, unknown>;
-    expect(model.primary).toBe("openai/gpt-5.2");
+    expect(model.primary).not.toBe("openai/gpt-5.2");
   });
 
   it("resolves sessionKey=current for a channel-plugin requester via implicit fallback", async () => {
