@@ -1240,6 +1240,9 @@ export class OpenClawApp extends LitElement {
           if (status === "error" && this.realtimeTalkDetail) {
             this.lastError = this.realtimeTalkDetail;
             this.chatError = this.realtimeTalkDetail;
+          } else if (status !== "error") {
+            this.lastError = null;
+            this.chatError = null;
           }
         },
         onTranscript: (entry) => {
