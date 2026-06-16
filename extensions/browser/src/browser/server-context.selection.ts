@@ -45,12 +45,20 @@ export function createProfileSelectionOps({
     await ensureBrowserAvailable();
     const profileState = getProfileState();
     const tabs1 = await listTabs();
+    let openedTab: BrowserTab | undefined;
     if (tabs1.length === 0) {
-      await openTab("about:blank");
+      openedTab = await openTab("about:blank");
     }
 
     const tabs = await listTabs();
-    const candidates = capabilities.supportsPerTabWs ? tabs.filter((t) => Boolean(t.wsUrl)) : tabs;
+    let candidates = capabilities.supportsPerTabWs ? tabs.filter((t) => Boolean(t.wsUrl)) : tabs;
+
+    // When we just opened a tab, ensure it survives the wsUrl filter.
+    // CDP's /json/list may not have populated webSocketDebuggerUrl yet
+    // even though openTab's internal discovery loop already resolved it.
+    if (openedTab && !candidates.some((t) => t.targetId === openedTab.targetId)) {
+      candidates = [...candidates, openedTab];
+    }
 
     const resolveById = (raw: string) => {
       const resolved = resolveTargetIdFromTabs(raw, candidates);
