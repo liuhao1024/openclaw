@@ -22,6 +22,7 @@ import {
   resolveSlackThreadHistoryFilterPolicy,
   shouldIncludeBotThreadStarterContext,
 } from "./prepare-thread-context-root.js";
+import { buildImageAnnotation, hasImageFiles } from "./image-annotation.js";
 import { resolveSlackTimestampMs } from "./timestamp.js";
 
 type SlackMediaModule = typeof import("../media.js");
@@ -297,7 +298,8 @@ export async function resolveSlackThreadContextData(params: {
       }
 
       const historyParts: string[] = [];
-      for (const historyMsg of filteredThreadHistory) {
+      const totalMessages = filteredThreadHistory.length;
+      for (const [msgIndex, historyMsg] of filteredThreadHistory.entries()) {
         const msgUser = historyMsg.userId ? userMap.get(historyMsg.userId) : null;
         const isOtherBot = Boolean(historyMsg.botId) && historyMsg.botId !== params.ctx.botId;
         const isCurrentBot = isCurrentBotAuthor({
@@ -309,7 +311,26 @@ export async function resolveSlackThreadContextData(params: {
         const msgSenderName = isCurrentBot
           ? "Bot (this assistant)"
           : (msgUser?.name ?? (historyMsg.botId ? `Bot (${historyMsg.botId})` : "Unknown"));
-        const msgWithId = `${historyMsg.text}\n[slack message id: ${historyMsg.ts ?? "unknown"} channel: ${params.message.channel}]`;
+
+        let imageAnnotation = "";
+        if (hasImageFiles(historyMsg.files)) {
+          const rawTimezone = params.envelopeOptions?.timezone;
+          const annotationTimezone =
+            !rawTimezone || rawTimezone === "local" || rawTimezone === "host"
+              ? (Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")
+              : rawTimezone === "utc" || rawTimezone === "gmt"
+                ? "UTC"
+                : rawTimezone;
+          imageAnnotation = `${buildImageAnnotation({
+            totalMessages,
+            messageIndex: msgIndex + 1,
+            timestamp: historyMsg.ts,
+            author: `${msgSenderName} (${role})`,
+            timezone: annotationTimezone,
+          })}\n`;
+        }
+
+        const msgWithId = `${historyMsg.text}\n${imageAnnotation}[slack message id: ${historyMsg.ts ?? "unknown"} channel: ${params.message.channel}]`;
         historyParts.push(
           formatInboundEnvelope({
             channel: "Slack",
