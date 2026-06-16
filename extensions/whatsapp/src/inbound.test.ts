@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractContactContext,
+  extractExternalAdReplyContext,
   extractLocationData,
   extractMediaPlaceholder,
   extractText,
@@ -265,69 +266,26 @@ describe("web inbound helpers", () => {
     ).toBe("<media:video>");
   });
 
-  it("extracts externalAdReply metadata from video GIF messages", () => {
-    expect(
-      extractMediaPlaceholder({
-        videoMessage: {
-          gifPlayback: true,
-          contextInfo: {
-            externalAdReply: {
-              title: "This Is Fine",
-              sourceUrl: "https://giphy.com/gifs/this-is-fine-3o7TK",
-              body: "A dog in a burning room",
-            },
+  it("keeps externalAdReply metadata out of the media placeholder", () => {
+    const message = {
+      videoMessage: {
+        gifPlayback: true,
+        contextInfo: {
+          externalAdReply: {
+            title: "This Is Fine",
+            sourceUrl: "https://giphy.com/gifs/this-is-fine-3o7TK",
+            body: "A dog in a burning room",
           },
         },
-      } as unknown as import("baileys").proto.IMessage),
-    ).toBe(
-      '<media:gif title="This Is Fine" source="https://giphy.com/gifs/this-is-fine-3o7TK" description="A dog in a burning room">',
-    );
-  });
+      },
+    } as unknown as import("baileys").proto.IMessage;
 
-  it("extracts externalAdReply metadata from image messages", () => {
-    expect(
-      extractMediaPlaceholder({
-        imageMessage: {
-          contextInfo: {
-            externalAdReply: {
-              title: "Product Photo",
-              sourceUrl: "https://example.com/product",
-            },
-          },
-        },
-      } as unknown as import("baileys").proto.IMessage),
-    ).toBe('<media:image title="Product Photo" source="https://example.com/product">');
-  });
-
-  it("escapes quotes and angle brackets in externalAdReply attributes", () => {
-    expect(
-      extractMediaPlaceholder({
-        videoMessage: {
-          gifPlayback: true,
-          contextInfo: {
-            externalAdReply: {
-              title: 'Say "hello"',
-              sourceUrl: "https://example.com",
-            },
-          },
-        },
-      } as unknown as import("baileys").proto.IMessage),
-    ).toBe('<media:gif title="Say &quot;hello&quot;" source="https://example.com">');
-  });
-
-  it("omits empty externalAdReply fields", () => {
-    expect(
-      extractMediaPlaceholder({
-        videoMessage: {
-          gifPlayback: true,
-          contextInfo: {
-            externalAdReply: {
-              title: "Only Title",
-            },
-          },
-        },
-      } as unknown as import("baileys").proto.IMessage),
-    ).toBe('<media:gif title="Only Title">');
+    expect(extractMediaPlaceholder(message)).toBe("<media:gif>");
+    expect(extractExternalAdReplyContext(message)).toEqual({
+      title: "This Is Fine",
+      sourceUrl: "https://giphy.com/gifs/this-is-fine-3o7TK",
+      body: "A dog in a burning room",
+    });
   });
 
   it("extracts WhatsApp location messages", () => {

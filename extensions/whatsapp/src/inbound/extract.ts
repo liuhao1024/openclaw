@@ -268,28 +268,24 @@ export function extractText(rawMessage: proto.IMessage | undefined): string | un
   return undefined;
 }
 
-function escapeAttr(value: string): string {
-  return value.replace(/"/g, "&quot;").replace(/>/g, "&gt;");
-}
-
-function extractExternalAdReplyMetadata(
-  contextInfo: proto.IContextInfo | null | undefined,
-): string {
-  const adReply = contextInfo?.externalAdReply;
+export function extractExternalAdReplyContext(rawMessage: proto.IMessage | undefined):
+  | {
+      title?: string;
+      sourceUrl?: string;
+      body?: string;
+    }
+  | undefined {
+  const message = unwrapMessage(rawMessage);
+  const adReply =
+    message?.imageMessage?.contextInfo?.externalAdReply ??
+    message?.videoMessage?.contextInfo?.externalAdReply;
   if (!adReply) {
-    return "";
+    return undefined;
   }
-  const attrs: string[] = [];
-  if (adReply.title) {
-    attrs.push(`title="${escapeAttr(adReply.title)}"`);
-  }
-  if (adReply.sourceUrl) {
-    attrs.push(`source="${escapeAttr(adReply.sourceUrl)}"`);
-  }
-  if (adReply.body) {
-    attrs.push(`description="${escapeAttr(adReply.body)}"`);
-  }
-  return attrs.length > 0 ? ` ${attrs.join(" ")}` : "";
+  const title = adReply.title?.trim() || undefined;
+  const sourceUrl = adReply.sourceUrl?.trim() || undefined;
+  const body = adReply.body?.trim() || undefined;
+  return title || sourceUrl || body ? { title, sourceUrl, body } : undefined;
 }
 
 export function extractMediaPlaceholder(
@@ -300,14 +296,10 @@ export function extractMediaPlaceholder(
     return undefined;
   }
   if (message.imageMessage) {
-    const metadata = extractExternalAdReplyMetadata(message.imageMessage.contextInfo);
-    return `<media:image${metadata}>`;
+    return "<media:image>";
   }
   if (message.videoMessage) {
-    const isGif = message.videoMessage.gifPlayback === true;
-    const tag = isGif ? "media:gif" : "media:video";
-    const metadata = extractExternalAdReplyMetadata(message.videoMessage.contextInfo);
-    return `<${tag}${metadata}>`;
+    return message.videoMessage.gifPlayback === true ? "<media:gif>" : "<media:video>";
   }
   if (message.audioMessage) {
     return "<media:audio>";
