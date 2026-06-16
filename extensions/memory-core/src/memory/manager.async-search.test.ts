@@ -13,7 +13,7 @@ describe("memory search async sync", () => {
     });
     const onError = vi.fn();
 
-    startAsyncSearchSync({
+    const searchPromise = startAsyncSearchSync({
       enabled: true,
       dirty: true,
       sessionsDirty: false,
@@ -23,7 +23,7 @@ describe("memory search async sync", () => {
 
     expect(syncMock).toHaveBeenCalledTimes(1);
     releaseSync();
-    await pending;
+    await searchPromise;
     expect(onError).not.toHaveBeenCalled();
   });
 
@@ -45,9 +45,9 @@ describe("memory search async sync", () => {
     await closePromise;
   });
 
-  it("skips background search sync when search-triggered sync is disabled", () => {
+  it("skips background search sync when search-triggered sync is disabled", async () => {
     const syncMock = vi.fn(async () => {});
-    startAsyncSearchSync({
+    await startAsyncSearchSync({
       enabled: false,
       dirty: true,
       sessionsDirty: false,
