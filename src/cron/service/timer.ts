@@ -1180,9 +1180,14 @@ export async function onTimer(state: CronServiceState) {
         // Use maintenance-only recompute to avoid advancing past-due nextRunAtMs
         // values without execution. This prevents jobs from being silently skipped
         // when the timer wakes up but findDueJobs returns empty (see #13992).
+        // Exempt pending catchup deferrals so staggered overflow slots survive
+        // empty-due maintenance ticks (#93935).
         const changed = recomputeNextRunsForMaintenance(state, {
           recomputeExpired: true,
           nowMs: dueCheckNow,
+          skipFutureRepairJobIds: state.pendingCatchupDeferralJobIds.size > 0
+            ? state.pendingCatchupDeferralJobIds
+            : undefined,
         });
         if (changed) {
           await persist(state);
@@ -1294,7 +1299,13 @@ export async function onTimer(state: CronServiceState) {
           // locked block.  The full recomputeNextRuns would silently skip
           // those jobs (advancing nextRunAtMs without execution), causing
           // daily cron schedules to jump 48 h instead of 24 h (#17852).
-          recomputeNextRunsForMaintenance(state);
+          // Exempt pending catchup deferrals so staggered overflow slots
+          // survive finalize recomputes (#93935).
+          recomputeNextRunsForMaintenance(state, {
+            skipFutureRepairJobIds: state.pendingCatchupDeferralJobIds.size > 0
+              ? state.pendingCatchupDeferralJobIds
+              : undefined,
+          });
           await persist(state);
         });
         finalizationSucceeded = finalizedResults.length > 0;

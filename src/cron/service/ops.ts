@@ -207,7 +207,13 @@ async function ensureLoadedForRead(state: CronServiceState) {
   }
   // Use the maintenance-only version so that read-only operations never
   // advance a past-due nextRunAtMs without executing the job (#16156).
-  const changed = recomputeNextRunsForMaintenance(state);
+  // Exempt pending catchup deferrals so staggered overflow slots survive
+  // read RPCs (cron list/status) until their catch-up tick fires (#93935).
+  const changed = recomputeNextRunsForMaintenance(state, {
+    skipFutureRepairJobIds: state.pendingCatchupDeferralJobIds.size > 0
+      ? state.pendingCatchupDeferralJobIds
+      : undefined,
+  });
   if (changed) {
     await persist(state);
   }
@@ -257,6 +263,13 @@ export async function start(state: CronServiceState) {
     skipJobIds: interruptedJobIds.size > 0 ? interruptedJobIds : undefined,
     deferAgentTurnJobs: true,
   });
+
+  // Persist deferred catchup IDs on state so maintenance recomputes from
+  // read RPCs, finalize, and empty-due ticks do not clobber the staggered
+  // nextRunAtMs before the catch-up tick fires.
+  if (deferredCatchupJobIds.size > 0) {
+    state.pendingCatchupDeferralJobIds = new Set(deferredCatchupJobIds);
+  }
 
   await locked(state, async () => {
     // Startup catch-up already persisted the latest in-memory store state, and
@@ -681,7 +694,12 @@ async function skipInvalidPersistedManualRun(params: {
     emit(params.state, { jobId: params.job.id, action: "removed" });
   }
 
-  recomputeNextRunsForMaintenance(params.state, { recomputeExpired: true });
+  recomputeNextRunsForMaintenance(params.state, {
+    recomputeExpired: true,
+    skipFutureRepairJobIds: params.state.pendingCatchupDeferralJobIds.size > 0
+      ? params.state.pendingCatchupDeferralJobIds
+      : undefined,
+  });
   await persist(params.state);
   armTimer(params.state);
 }
@@ -788,7 +806,12 @@ async function inspectManualRunPreflight(
     // Normalize job tick state (clears stale runningAtMs markers) before
     // checking if already running, so a stale marker from a crashed Phase-1
     // persist does not block manual triggers for up to STUCK_RUN_MS (#17554).
-    recomputeNextRunsForMaintenance(state);
+    // Exempt pending catchup deferrals (#93935).
+    recomputeNextRunsForMaintenance(state, {
+      skipFutureRepairJobIds: state.pendingCatchupDeferralJobIds.size > 0
+        ? state.pendingCatchupDeferralJobIds
+        : undefined,
+    });
     const job = findJobOrThrow(state, id);
     try {
       assertSupportedJobSpec(job);
@@ -1001,7 +1024,12 @@ async function finishPreparedManualRun(
         snapshot: postRunSnapshot,
         removed: postRunRemoved,
       });
-      recomputeNextRunsForMaintenance(state, { recomputeExpired: true });
+      recomputeNextRunsForMaintenance(state, {
+        recomputeExpired: true,
+        skipFutureRepairJobIds: state.pendingCatchupDeferralJobIds.size > 0
+          ? state.pendingCatchupDeferralJobIds
+          : undefined,
+      });
       await persist(state);
       finalized = true;
     });
