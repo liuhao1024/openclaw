@@ -268,7 +268,9 @@ describe("AcpSessionManager turn results", () => {
           "I'll inspect the repo now. The crash is a missing null check in src/foo.ts.",
       });
       expect(record.terminalOutcome).toBeUndefined();
-      expect(record.terminalSummary).toBeUndefined();
+      expect(record.terminalSummary).toBe(
+        "I'll inspect the repo now. The crash is a missing null check in src/foo.ts.",
+      );
     });
   });
 
@@ -343,7 +345,9 @@ describe("AcpSessionManager turn results", () => {
           "I'll inspect the repo now: the crash is a missing null check in src/foo.ts.",
       });
       expect(record.terminalOutcome).toBeUndefined();
-      expect(record.terminalSummary).toBeUndefined();
+      expect(record.terminalSummary).toBe(
+        "I'll inspect the repo now: the crash is a missing null check in src/foo.ts.",
+      );
     });
   });
 
