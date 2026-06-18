@@ -826,6 +826,46 @@ describe("matrix client storage paths", () => {
     expectCanonicalRootForNewDevice(stateDir);
   });
 
+  it("warns when multiple populated token-hash sibling dirs are detected", () => {
+    const warnSpy = vi.fn();
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-matrix-storage-"));
+    tempDirs.push(stateDir);
+    fs.mkdirSync(path.join(stateDir, ".openclaw"), { recursive: true });
+    installMatrixTestRuntime({
+      cfg: { channels: { matrix: {} } },
+      logging: {
+        getChildLogger: () => ({
+          info: () => {},
+          warn: warnSpy,
+          error: () => {},
+        }),
+      },
+      stateDir: path.join(stateDir, ".openclaw"),
+    });
+
+    // Seed an old sibling storage root with compatible metadata.
+    seedExistingStorageRoot({
+      accessToken: "secret-token-old",
+      deviceId: "DEVICE123",
+      storageMeta: {
+        homeserver: defaultStorageAuth.homeserver,
+        userId: defaultStorageAuth.userId,
+        accountId: "default",
+        deviceId: "DEVICE123",
+      },
+    });
+
+    // Resolve with a new token — the sibling scan should detect the old root.
+    resolveDefaultStoragePaths({
+      accessToken: "secret-token-new",
+      deviceId: "DEVICE123",
+    });
+
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toContain("Multiple populated token-hash dirs detected");
+    expect(warnSpy.mock.calls[0][0]).toContain("Consider archiving stale dirs");
+  });
+
   it("keeps the current-token storage root stable after deviceId backfill when startup claimed state there", () => {
     const { stateDir, canonicalPaths } = setupCurrentTokenBackfillScenario({
       currentRootFiles: "thread-bindings",

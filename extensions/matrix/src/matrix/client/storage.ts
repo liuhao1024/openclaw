@@ -289,6 +289,8 @@ function resolvePreferredMatrixStorageRoot(params: {
     };
   }
 
+  const populatedSiblings: string[] = [];
+
   for (const entry of siblingEntries) {
     if (!entry.isDirectory()) {
       continue;
@@ -315,6 +317,7 @@ function resolvePreferredMatrixStorageRoot(params: {
     if (candidateScore <= 0) {
       continue;
     }
+    populatedSiblings.push(entry.name);
     const candidateMtimeMs = resolveStorageRootMtimeMs(candidateRootDir);
     if (
       candidateScore > best.score ||
@@ -328,6 +331,21 @@ function resolvePreferredMatrixStorageRoot(params: {
         score: candidateScore,
         mtimeMs: candidateMtimeMs,
       };
+    }
+  }
+
+  if (populatedSiblings.length > 0) {
+    try {
+      getMatrixRuntime()
+        .logging.getChildLogger({ module: "matrix-storage" })
+        .warn?.(
+          `Multiple populated token-hash dirs detected under ${parentDir} ` +
+            `(canonical: ${params.canonicalTokenHash}, ` +
+            `siblings: ${populatedSiblings.join(", ")}). ` +
+            `Consider archiving stale dirs to prevent drift after token rotations.`,
+        );
+    } catch {
+      // Runtime may not be initialised yet during early bootstrap.
     }
   }
 
