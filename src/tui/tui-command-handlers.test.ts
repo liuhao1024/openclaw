@@ -541,6 +541,32 @@ describe("tui command handlers", () => {
     });
   });
 
+  it("shows system message for /status in local mode instead of sending to model", async () => {
+    const { handleCommand, sendChat, addSystem } = createHarness({
+      opts: { local: true },
+    });
+
+    await handleCommand("/status");
+
+    expect(sendChat).not.toHaveBeenCalled();
+    expect(addSystem).toHaveBeenCalledWith(
+      "/status is not supported in local TUI mode — use gateway-connected TUI for this command",
+    );
+  });
+
+  it("shows system message for /compact in local mode instead of sending to model", async () => {
+    const { handleCommand, sendChat, addSystem } = createHarness({
+      opts: { local: true },
+    });
+
+    await handleCommand("/compact");
+
+    expect(sendChat).not.toHaveBeenCalled();
+    expect(addSystem).toHaveBeenCalledWith(
+      "/compact is not supported in local TUI mode — use gateway-connected TUI for this command",
+    );
+  });
+
   it("keeps gateway diagnostics on /gateway-status", async () => {
     const { handleCommand, getGatewayStatus, addSystem, addUser, sendChat } = createHarness({
       getGatewayStatus: vi.fn().mockResolvedValue({
