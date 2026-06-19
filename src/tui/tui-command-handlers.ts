@@ -709,6 +709,16 @@ export function createCommandHandlers(context: CommandHandlerContext) {
       case "quit":
         requestExit();
         break;
+      case "status":
+      case "compact":
+        if (opts.local === true) {
+          chatLog.addSystem(
+            `/${name} is not supported in local TUI mode — use gateway-connected TUI for this command`,
+          );
+        } else {
+          await sendMessage(raw);
+        }
+        break;
       default:
         await sendMessage(raw);
         break;
