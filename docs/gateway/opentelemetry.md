@@ -390,6 +390,11 @@ to them directly without OTLP export.
   - `costUsd`: estimated cost in USD (omitted when cost config is unavailable)
   - `durationMs`: total turn duration in milliseconds
   - `lastCallUsage`: per-call usage breakdown from the last individual API call (optional)
+    - `lastCallUsage.input`: input token count for the last API call
+    - `lastCallUsage.output`: output token count for the last API call
+    - `lastCallUsage.cacheRead`: cached input tokens read from provider prompt cache
+    - `lastCallUsage.cacheWrite`: cached input tokens written to provider prompt cache
+    - `lastCallUsage.total`: total token count for the last API call
   - `ts`: unix-ms timestamp when the event was dispatched (shared envelope)
   - `seq`: monotonically increasing sequence number per diagnostic session (shared envelope)
   - `trace`: optional distributed-trace context (shared envelope)
