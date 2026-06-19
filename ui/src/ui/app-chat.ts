@@ -1312,17 +1312,16 @@ function clearSubmittedComposerState(
         attachmentSubmitSignature(attachment) ===
         attachmentSubmitSignature(submittedAttachments[index]),
     );
-  const clearedDraft = host.chatMessage === submittedDraft && attachmentsUnchanged;
-  const clearedAttachments = clearedDraft;
-  if (clearedDraft) {
-    host.chatMessage = "";
-  }
-  if (clearedAttachments) {
-    host.chatAttachments = [];
-  }
-  if (clearedDraft || clearedAttachments) {
-    resetChatInputHistoryNavigation(host);
-  }
+  // Always clear the composer after a send — the previous guard
+  // (host.chatMessage === submittedDraft) skipped clearing when async
+  // races (model switch, session change, rapid re-typing) mutated
+  // host.chatMessage between capture and the guard callback, leaving
+  // stale text in the input box (fixes #89466).
+  const clearedDraft = host.chatMessage === submittedDraft || attachmentsUnchanged;
+  const clearedAttachments = true;
+  host.chatMessage = "";
+  host.chatAttachments = [];
+  resetChatInputHistoryNavigation(host);
   return {
     previousAttachments: clearedAttachments ? submittedAttachments : undefined,
     previousDraft: clearedDraft ? submittedDraft : undefined,
