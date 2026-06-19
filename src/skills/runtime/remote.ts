@@ -201,7 +201,7 @@ export async function primeRemoteSkillsCache() {
         node.bins &&
         node.bins.length > 0 &&
         isMacPlatform(node.platform, node.deviceFamily) &&
-        supportsSystemRun(node.commands)
+        (supportsSystemRun(node.commands) || supportsSystemWhich(node.commands))
       ) {
         sawMac = true;
       }
@@ -235,7 +235,7 @@ export function removeRemoteNodeInfo(nodeId: string) {
   if (
     existing &&
     isMacPlatform(existing.platform, existing.deviceFamily) &&
-    supportsSystemRun(existing.commands)
+    (supportsSystemRun(existing.commands) || supportsSystemWhich(existing.commands))
   ) {
     bumpSkillsSnapshotVersion({ reason: "remote-node" });
   }
@@ -455,7 +455,7 @@ export function getRemoteSkillEligibility(options?: {
     (node) =>
       node.connected &&
       isMacPlatform(node.platform, node.deviceFamily) &&
-      supportsSystemRun(node.commands),
+      (supportsSystemRun(node.commands) || supportsSystemWhich(node.commands)),
   );
   if (macNodes.length === 0) {
     return undefined;

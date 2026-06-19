@@ -99,9 +99,9 @@ describe("skills-remote", () => {
     expect(after).toBeGreaterThan(before);
   });
 
-  it("ignores non-mac and non-system.run nodes for eligibility", () => {
+  it("ignores non-mac nodes but includes mac nodes with system.which", () => {
     const linuxNodeId = `node-${randomUUID()}`;
-    const noRunNodeId = `node-${randomUUID()}`;
+    const whichOnlyNodeId = `node-${randomUUID()}`;
     const bin = `bin-${randomUUID()}`;
     try {
       recordRemoteNodeInfo({
@@ -113,17 +113,21 @@ describe("skills-remote", () => {
       recordRemoteNodeBins(linuxNodeId, [bin]);
 
       recordRemoteNodeInfo({
-        nodeId: noRunNodeId,
+        nodeId: whichOnlyNodeId,
         displayName: "Remote Mac",
         platform: "darwin",
         commands: ["system.which"],
       });
-      recordRemoteNodeBins(noRunNodeId, [bin]);
+      recordRemoteNodeBins(whichOnlyNodeId, [bin]);
 
-      expect(getRemoteSkillEligibility()).toBeUndefined();
+      // Linux node is ignored; mac node with system.which is eligible
+      const eligibility = getRemoteSkillEligibility();
+      expect(eligibility).toBeDefined();
+      expect(eligibility?.platforms).toEqual(["darwin"]);
+      expect(eligibility?.hasBin(bin)).toBe(true);
     } finally {
       removeRemoteNodeInfo(linuxNodeId);
-      removeRemoteNodeInfo(noRunNodeId);
+      removeRemoteNodeInfo(whichOnlyNodeId);
     }
   });
 
