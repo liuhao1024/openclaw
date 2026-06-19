@@ -2286,12 +2286,12 @@ export async function runReplyAgent(params: {
                 providers: [quotaProvider],
                 config: cfg,
               }),
-              new Promise<never>((_, reject) =>
+              new Promise<never>((_, reject) => {
                 setTimeout(
                   () => reject(new Error("usage footer quota timeout")),
                   footerQuotaTimeoutMs,
-                ),
-              ),
+                );
+              }),
             ]);
             const quotaEntry = quotaSummary.providers.find(
               (p) => p.windows.length > 0 && !p.error,
