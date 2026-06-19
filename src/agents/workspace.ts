@@ -857,6 +857,13 @@ export async function ensureAgentWorkspace(params?: {
 
   await fs.mkdir(dir, { recursive: true });
 
+  // Ensure skill directories exist before sandbox container creation so that
+  // resolveReadOnlyWorkspaceSkillMounts can always mount them read-only.
+  // Without this, a brand-new workspace starts with a writable skills directory
+  // until the gateway restarts after the directories are eventually created.
+  await fs.mkdir(path.join(dir, "skills"), { recursive: true });
+  await fs.mkdir(path.join(dir, ".agents", "skills"), { recursive: true });
+
   if (!params?.ensureBootstrapFiles) {
     const hasContentEvidence = await hasSkipBootstrapWorkspaceContentEvidence(dir);
     if (recentAttestationPath && !hasContentEvidence) {
