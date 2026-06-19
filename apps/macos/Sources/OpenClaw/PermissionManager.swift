@@ -10,6 +10,10 @@ import Speech
 import UserNotifications
 
 enum PermissionManager {
+    /// Shared CLLocationManager cached to avoid repeated TCCAccessRequest IPC
+    /// calls that fire every time a new instance is created during permission checks.
+    nonisolated(unsafe) static let cachedLocationManager = CLLocationManager()
+
     static func isLocationAuthorized(status: CLAuthorizationStatus, requireAlways: Bool) -> Bool {
         if requireAlways { return status == .authorizedAlways }
         switch status {
@@ -156,7 +160,7 @@ enum PermissionManager {
             }
             return false
         }
-        let status = CLLocationManager().authorizationStatus
+        let status = self.cachedLocationManager.authorizationStatus
         switch status {
         case .authorizedAlways, .authorizedWhenInUse, .authorized:
             return true
@@ -218,7 +222,7 @@ enum PermissionManager {
                 results[cap] = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
 
             case .location:
-                let status = CLLocationManager().authorizationStatus
+                let status = self.cachedLocationManager.authorizationStatus
                 results[cap] = CLLocationManager.locationServicesEnabled()
                     && self.isLocationAuthorized(status: status, requireAlways: false)
             }
