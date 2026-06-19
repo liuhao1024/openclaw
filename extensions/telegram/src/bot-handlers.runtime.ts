@@ -886,6 +886,13 @@ export const registerTelegramHandlers = ({
         commandAuthorized: commandGate.authorized,
       },
     });
+    // Honor explicit ingest opt-in: ingest-enabled groups/topics should not
+    // skip media download even when the bot was not mentioned.
+    const ingestEnabled = topicConfig?.ingest ?? groupConfig?.ingest;
+    if (ingestEnabled === true) {
+      return false;
+    }
+
     if (mentionDecision.shouldSkip) {
       logger.info({ chatId, reason: "no-mention" }, "skipping group media before download");
       return true;
