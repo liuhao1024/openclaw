@@ -141,10 +141,10 @@ function normalizeMediaEntryForTranscript(media: PersistedUserTurnMediaInput):
 
 function normalizeOptionalTextArray(
   values: readonly (string | null | undefined)[] | null | undefined,
-): string[] {
-  return (
-    values?.map(normalizeOptionalText).filter((value): value is string => Boolean(value)) ?? []
-  );
+): (string | undefined)[] {
+  // Preserve array length so parallel Media* arrays stay index-aligned.
+  // Empty/absent entries normalize to undefined; callers use ?? fallback.
+  return values?.map((v) => normalizeOptionalText(v) || undefined) ?? [];
 }
 
 const URL_LIKE_MEDIA_PATH_PATTERN = /^[a-z][a-z0-9+.-]*:/i;
