@@ -33,7 +33,7 @@ function walkMarkdownFiles(dir, base = dir) {
     if (entry.isDirectory()) {
       if (EXCLUDED_DIRS.has(entry.name)) continue;
       files.push(...walkMarkdownFiles(fullPath, base));
-    } else if (entry.isFile() && entry.name.endsWith(".md")) {
+    } else if (entry.isFile() && (entry.name.endsWith(".md") || entry.name.endsWith(".mdx"))) {
       if (entry.name === "docs_map.md") continue; // skip self
       files.push(relative(base, fullPath));
     }
@@ -67,9 +67,15 @@ function extractPageInfo(fullPath) {
     }
   }
 
-  // Extract H2/H3/H4 headings from body
+  // Extract H2/H3/H4 headings from body, skipping fenced code blocks
   const headings = [];
+  let inFence = false;
   for (const line of body.split("\n")) {
+    if (line.match(/^```/)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
     const match = line.match(/^(#{2,4})\s+(.+)$/);
     if (match) {
       const level = match[1].length; // 2, 3, or 4
@@ -131,7 +137,7 @@ for (const dir of sortedDirs) {
     const { title, headings } = extractPageInfo(fullPath);
 
     // Page header: use front-matter title or filename
-    const displayTitle = title || file.replace(/\.md$/, "");
+    const displayTitle = title || file.replace(/\.(md|mdx)$/, "");
     lines.push(`### ${displayTitle}`);
     lines.push(`\`${file}\``);
     lines.push("");
