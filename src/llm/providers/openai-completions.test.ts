@@ -890,4 +890,67 @@ describe("openai-completions stop-reason tool-call guard", () => {
     expect(result.stopReason).toBe("stop");
     expect(result.content.filter((b) => b.type === "toolCall")).toStrictEqual([]);
   });
+
+  it("closes reasoning stream when text content arrives without reasoning field (DeepSeek transition)", async () => {
+    mockChunksRef.chunks = [
+      {
+        id: "chatcmpl-test",
+        choices: [
+          {
+            index: 0,
+            delta: {
+              reasoning_content: "Let me think about this...",
+            },
+          },
+        ],
+      },
+      {
+        id: "chatcmpl-test",
+        choices: [
+          {
+            index: 0,
+            delta: {
+              reasoning_content: "Yes, the answer is 42.",
+            },
+          },
+        ],
+      },
+      // DeepSeek switches from reasoning_content to content with no boundary event
+      {
+        id: "chatcmpl-test",
+        choices: [
+          {
+            index: 0,
+            delta: {
+              content: "The answer is 42.",
+            },
+          },
+        ],
+      },
+      makeFinishChunk("stop"),
+    ];
+
+    const stream = streamOpenAICompletions(reasoningModel, context, {
+      apiKey: "sk-test",
+      reasoningEffort: "medium",
+    });
+    const result = await stream.result();
+
+    const thinkingBlocks = result.content.filter(
+      (b): b is { type: "thinking"; thinking: string; thinkingSignature: string } =>
+        b.type === "thinking",
+    );
+    const textBlocks = result.content.filter(
+      (b): b is { type: "text"; text: string } => b.type === "text",
+    );
+
+    // Thinking block should contain only reasoning, not the answer
+    expect(thinkingBlocks).toHaveLength(1);
+    expect(thinkingBlocks[0].thinking).toBe("Let me think about this...Yes, the answer is 42.");
+    expect(thinkingBlocks[0].thinkingSignature).toBe("reasoning_content");
+
+    // Text block should contain only the answer, not reasoning
+    expect(textBlocks).toHaveLength(1);
+    expect(textBlocks[0].text).toBe("The answer is 42.");
+  });
 });

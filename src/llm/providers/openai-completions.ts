@@ -396,6 +396,14 @@ export const streamOpenAICompletions: StreamFunction<
             choice.delta.content !== undefined &&
             choice.delta.content.length > 0
           ) {
+            // Close the reasoning stream when text content arrives without
+            // reasoning in the same chunk. DeepSeek and similar providers
+            // switch from reasoning_content to content with no boundary
+            // event, so the thought must be sealed before the answer.
+            if (!foundReasoningField && thinkingBlock) {
+              finishBlock(thinkingBlock);
+              thinkingBlock = null;
+            }
             appendPartitionedContent(choice.delta.content, Boolean(foundReasoningField));
           }
 
