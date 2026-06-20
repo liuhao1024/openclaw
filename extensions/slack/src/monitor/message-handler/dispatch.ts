@@ -2113,8 +2113,14 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
 
   // Record thread participation only when we actually delivered a reply and
   // know the thread ts that was used (set by deliverNormally, streaming start,
-  // or draft stream). Falls back to statusThreadTs for edge cases.
-  const participationThreadTs = usedReplyThreadTs ?? statusThreadTs;
+  // or draft stream). For thread replies, prefer the canonical Slack root
+  // thread ts (incomingThreadTs / message.thread_ts) so the participation key
+  // matches what the inbound implicit-mention lookup uses in prepare.ts.
+  // Without this normalization, participation can be recorded under a child
+  // message ts, causing later unmentioned replies in the same thread to be
+  // incorrectly dropped as "no-mention".
+  const participationThreadTs =
+    isThreadReply && incomingThreadTs ? incomingThreadTs : (usedReplyThreadTs ?? statusThreadTs);
   if (anyReplyDelivered && participationThreadTs) {
     recordSlackThreadParticipation(account.accountId, message.channel, participationThreadTs, {
       agentId: route.agentId,
