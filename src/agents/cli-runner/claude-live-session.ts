@@ -867,7 +867,6 @@ function handleClaudeLiveControlRequest(
   if (!requestId) {
     return;
   }
-  const toolUseId = typeof request.tool_use_id === "string" ? request.tool_use_id : undefined;
   const allowed = turn.execPermission.security === "full" && turn.execPermission.ask === "off";
   writeClaudeLiveControlResponse(session, {
     type: "control_response",
@@ -876,8 +875,8 @@ function handleClaudeLiveControlRequest(
       request_id: requestId,
       response: allowed
         ? {
-            behavior: "allow",
-            ...(toolUseId ? { toolUseID: toolUseId } : {}),
+            updatedInput:
+              typeof request.input === "object" && request.input !== null ? request.input : {},
           }
         : {
             behavior: "deny",
