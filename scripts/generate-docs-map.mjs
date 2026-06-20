@@ -107,6 +107,7 @@ const markdownFiles = walkMarkdownFiles(DOCS_DIR);
 const tree = buildTree(markdownFiles);
 
 const lines = [];
+const seenHeadings = new Set();
 lines.push("# Docs Map");
 lines.push("");
 lines.push(
@@ -129,16 +130,24 @@ const sortedDirs = Object.keys(tree).sort((a, b) => {
 for (const dir of sortedDirs) {
   if (dir) {
     lines.push(`## ${dir}/`);
-    lines.push("");
+  } else {
+    lines.push("## Pages");
   }
+  lines.push("");
 
   for (const file of tree[dir]) {
     const fullPath = join(DOCS_DIR, file);
     const { title, headings } = extractPageInfo(fullPath);
 
     // Page header: use front-matter title or filename
-    const displayTitle = title || file.replace(/\.(md|mdx)$/, "");
+    let displayTitle = title || file.replace(/\.(md|mdx)$/, "");
+    // Append directory context for duplicate headings (MD024)
+    if (seenHeadings.has(displayTitle)) {
+      displayTitle = dir ? `${displayTitle} (${dir})` : `${displayTitle} (${file})`;
+    }
+    seenHeadings.add(displayTitle);
     lines.push(`### ${displayTitle}`);
+    lines.push("");
     lines.push(`\`${file}\``);
     lines.push("");
 
