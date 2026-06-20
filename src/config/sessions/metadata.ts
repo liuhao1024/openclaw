@@ -12,6 +12,8 @@ import { buildGroupDisplayName, resolveGroupSessionKey } from "./group.js";
 import type { GroupKeyResolution, SessionEntry, SessionOrigin } from "./types.js";
 
 // Origin updates merge sparse channel metadata without deleting previously known fields.
+// When the provider changes, per-channel identity fields are cleared to prevent stale
+// cross-channel IDs from persisting (e.g. Slack channel ID surviving into a Telegram session).
 const mergeOrigin = (
   existing: SessionOrigin | undefined,
   next: SessionOrigin | undefined,
@@ -24,7 +26,15 @@ const mergeOrigin = (
     merged.label = next.label;
   }
   if (next?.provider) {
+    const providerChanged = existing?.provider != null && next.provider !== existing.provider;
     merged.provider = next.provider;
+    if (providerChanged) {
+      // Clear per-channel identity fields that are platform-specific.
+      delete merged.nativeChannelId;
+      delete merged.nativeDirectUserId;
+      delete merged.threadId;
+      delete merged.accountId;
+    }
   }
   if (next?.surface) {
     merged.surface = next.surface;
