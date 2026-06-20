@@ -158,6 +158,7 @@ const CHITCHAT_PATTERNS = [
   /(?:current|当前).*(?:date|time|日期|时间)/i,
   /(?:looks? like|看起来|似乎|好像).*(?:didn'?t|没有|没说|may not)/i,
   /(?:how can i|需要什么|需要我)/i,
+  /(?:当前模型|current model).*(?:如果|if).*(?:帮助|help|assist|告诉|tell)/i,
 ];
 
 const RECALLED_CONTEXT_LINE_PATTERNS = [
@@ -3759,6 +3760,8 @@ const testing = {
   getCachedResult,
   hasUsableMemoryResultInSessionRecord,
   isCircuitBreakerOpen,
+  isChitchatSummary,
+  normalizeActiveSummary,
   isMissingRegisteredMemoryToolsError,
   normalizePluginConfig,
   readActiveMemorySearchDebug,
