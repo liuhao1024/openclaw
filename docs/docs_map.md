@@ -5675,6 +5675,7 @@ Auto-generated navigation map for LLM agents. Each page lists its H2/H3/H4 headi
 - Provider plus harness pairing
   - Tool-result middleware
   - Terminal outcome classification
+  - Agent-end side effects
   - Native Codex harness mode
 - Runtime strictness
 - Native sessions and transcript mirror
