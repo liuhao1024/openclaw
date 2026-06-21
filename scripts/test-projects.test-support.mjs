@@ -451,6 +451,21 @@ const TOOLING_SOURCE_TEST_TARGETS = new Map([
   ["scripts/check-dependency-pins.mjs", ["test/scripts/check-dependency-pins.test.ts"]],
   ["scripts/check-deadcode-unused-files.mjs", ["test/scripts/check-deadcode-unused-files.test.ts"]],
   ["scripts/check-dynamic-import-warts.mjs", ["test/scripts/check-dynamic-import-warts.test.ts"]],
+  [
+    "scripts/lib/config-boundary-guard.mjs",
+    [
+      "src/plugins/contracts/config-boundary-guard.test.ts",
+      "src/plugins/contracts/deprecated-internal-config-api.test.ts",
+    ],
+  ],
+  [
+    "scripts/lib/deprecated-config-api-guard.mjs",
+    ["src/plugins/contracts/deprecated-internal-config-api.test.ts"],
+  ],
+  [
+    "scripts/lib/extension-package-boundary.ts",
+    ["src/plugins/contracts/extension-package-project-boundaries.test.ts"],
+  ],
   ["scripts/check-extension-plugin-sdk-boundary.mjs", ["test/extension-import-boundaries.test.ts"]],
   ["scripts/check-no-conflict-markers.mjs", ["test/scripts/check-no-conflict-markers.test.ts"]],
   [
@@ -462,6 +477,18 @@ const TOOLING_SOURCE_TEST_TARGETS = new Map([
     ["test/extension-import-boundaries.test.ts"],
   ],
   ["scripts/check-src-extension-import-boundary.mjs", ["test/extension-import-boundaries.test.ts"]],
+  [
+    "scripts/lib/guard-inventory-utils.mjs",
+    [
+      "test/extension-import-boundaries.test.ts",
+      "test/plugin-extension-import-boundary.test.ts",
+      "test/architecture-smells.test.ts",
+      "test/web-provider-boundary.test.ts",
+      "test/test-helper-extension-import-boundary.test.ts",
+      "test/scripts/extension-import-boundary-checker.test.ts",
+      "src/plugins/contracts/plugin-sdk-subpaths.test.ts",
+    ],
+  ],
   [
     "scripts/check-test-helper-extension-import-boundary.mjs",
     ["test/test-helper-extension-import-boundary.test.ts"],
@@ -745,6 +772,28 @@ const TOOLING_SOURCE_TEST_TARGETS = new Map([
     "scripts/lib/deprecated-plugin-sdk-usage.mjs",
     ["test/scripts/check-deprecated-api-usage.test.ts"],
   ],
+  [
+    "scripts/lib/plugin-sdk-deprecated-public-subpaths.json",
+    [
+      "test/scripts/check-deprecated-api-usage.test.ts",
+      "src/plugins/contracts/plugin-sdk-package-contract-guardrails.test.ts",
+      "test/scripts/plugin-sdk-surface-report.test.ts",
+      "test/scripts/build-all.test.ts",
+    ],
+  ],
+  [
+    "scripts/lib/plugin-sdk-entries.mjs",
+    [
+      "src/plugins/contracts/plugin-sdk-package-contract-guardrails.test.ts",
+      "src/plugins/contracts/extension-package-project-boundaries.test.ts",
+      "test/scripts/plugin-sdk-surface-report.test.ts",
+      "test/scripts/build-all.test.ts",
+      "test/release-check.test.ts",
+      "test/scripts/prepare-extension-package-boundary-artifacts.test.ts",
+      "test/scripts/ts-topology.test.ts",
+      TOOLING_VITEST_CONFIG,
+    ],
+  ],
   ["scripts/lib/direct-run.mjs", ["test/scripts/changed-lanes.test.ts"]],
   ["scripts/docker/cleanup-smoke/run.sh", ["test/scripts/docker-build-helper.test.ts"]],
   [
@@ -876,6 +925,13 @@ const TOOLING_SOURCE_TEST_TARGETS = new Map([
   ],
   ["scripts/lib/stable-release-closeout.mjs", ["test/stable-release-closeout.test.ts"]],
   ["scripts/lib/source-file-scan-cache.mjs", ["test/scripts/source-file-scan-cache.test.ts"]],
+  [
+    "scripts/lib/extension-source-classifier.mjs",
+    [
+      "test/scripts/extension-source-classifier.test.ts",
+      "src/channels/plugins/contracts/channel-import-guardrails.test.ts",
+    ],
+  ],
   ["scripts/lib/test-group-report.mjs", ["test/scripts/test-group-report.test.ts"]],
   ["scripts/lib/ts-topology/analyze.ts", ["test/scripts/ts-topology.test.ts"]],
   ["scripts/lib/ts-topology/reports.ts", ["test/scripts/ts-topology.test.ts"]],
