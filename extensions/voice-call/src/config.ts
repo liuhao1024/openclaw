@@ -61,8 +61,16 @@ const TwilioConfigSchema = z
     accountSid: z.string().min(1).optional(),
     /** Twilio Auth Token */
     authToken: SecretInputSchema.optional(),
+    /** Twilio Edge location (e.g. "dublin"); requires region to be set */
+    edge: z.string().min(1).optional(),
+    /** Twilio processing Region (e.g. "ie1"); requires edge to be set */
+    region: z.string().min(1).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (v) => (v.edge == null) === (v.region == null),
+    "edge and region must both be set or both omitted",
+  );
 
 const PlivoConfigSchema = z
   .object({

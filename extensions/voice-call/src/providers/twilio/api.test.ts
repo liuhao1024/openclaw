@@ -231,4 +231,27 @@ describe("twilioApiRequest", () => {
     }
     expect(release).toHaveBeenCalledTimes(1);
   });
+
+  it("uses custom allowedHostnames when provided", async () => {
+    const release = vi.fn(async () => {});
+    fetchWithSsrFGuardMock.mockResolvedValue({
+      response: new Response(JSON.stringify({ sid: "CA456" }), { status: 200 }),
+      release,
+    });
+
+    await twilioApiRequest({
+      baseUrl: "https://api.dublin.ie1.twilio.com",
+      accountSid: "ACIE1",
+      authToken: "secret",
+      endpoint: "/Calls.json",
+      body: { To: "+141****0123" },
+      allowedHostnames: ["api.dublin.ie1.twilio.com"],
+    });
+
+    const { policy } = requireFirstFetchGuardRequest();
+    expect(policy).toEqual({
+      allowedHostnames: ["api.dublin.ie1.twilio.com"],
+    });
+    expect(release).toHaveBeenCalledTimes(1);
+  });
 });

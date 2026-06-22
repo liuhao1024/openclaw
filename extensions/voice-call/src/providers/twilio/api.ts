@@ -58,6 +58,7 @@ export async function twilioApiRequest<T = unknown>(params: {
   endpoint: string;
   body: URLSearchParams | Record<string, string | string[]>;
   allowNotFound?: boolean;
+  allowedHostnames?: string[];
 }): Promise<T> {
   const bodyParams =
     params.body instanceof URLSearchParams
@@ -84,7 +85,7 @@ export async function twilioApiRequest<T = unknown>(params: {
       },
       body: bodyParams,
     },
-    policy: { allowedHostnames: ["api.twilio.com"] },
+    policy: { allowedHostnames: params.allowedHostnames ?? ["api.twilio.com"] },
     timeoutMs: TWILIO_API_TIMEOUT_MS,
     auditContext: "voice-call.twilio.api",
   });

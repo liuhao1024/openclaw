@@ -72,6 +72,8 @@ type StreamSendResult = {
 type TwilioProviderConfig = {
   accountSid?: string;
   authToken?: string;
+  edge?: string;
+  region?: string;
 };
 
 export class TwilioProvider implements VoiceCallProvider {
@@ -80,6 +82,7 @@ export class TwilioProvider implements VoiceCallProvider {
   private readonly accountSid: string;
   private readonly authToken: string;
   private readonly baseUrl: string;
+  private readonly apiHostname: string;
   private readonly callWebhookUrls = new Map<string, string>();
   private readonly options: TwilioProviderOptions;
 
@@ -144,7 +147,12 @@ export class TwilioProvider implements VoiceCallProvider {
 
     this.accountSid = config.accountSid;
     this.authToken = config.authToken;
-    this.baseUrl = `https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}`;
+    const hostname =
+      config.edge && config.region
+        ? `api.${config.edge}.${config.region}.twilio.com`
+        : "api.twilio.com";
+    this.apiHostname = hostname;
+    this.baseUrl = `https://${hostname}/2010-04-01/Accounts/${this.accountSid}`;
     this.options = options;
 
     if (options.publicUrl) {
@@ -227,6 +235,7 @@ export class TwilioProvider implements VoiceCallProvider {
       endpoint,
       body: params,
       allowNotFound: options?.allowNotFound,
+      allowedHostnames: [this.apiHostname],
     });
   }
 

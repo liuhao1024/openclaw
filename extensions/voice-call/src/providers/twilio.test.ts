@@ -651,3 +651,51 @@ describe("TwilioProvider", () => {
     expect(sendMark).not.toHaveBeenCalled();
   });
 });
+
+describe("TwilioProvider edge/region", () => {
+  it("uses default api.twilio.com when edge and region are absent", () => {
+    const provider = new TwilioProvider(
+      { accountSid: "AC123", authToken: "secret" },
+      { publicUrl: "https://example.ngrok.app" },
+    );
+    const baseUrl = (provider as unknown as { baseUrl: string }).baseUrl;
+    expect(baseUrl).toBe("https://api.twilio.com/2010-04-01/Accounts/AC123");
+  });
+
+  it("constructs regional hostname when both edge and region are set", () => {
+    const provider = new TwilioProvider(
+      {
+        accountSid: "ACIE1",
+        authToken: "secret",
+        edge: "dublin",
+        region: "ie1",
+      },
+      { publicUrl: "https://example.ngrok.app" },
+    );
+    const baseUrl = (provider as unknown as { baseUrl: string }).baseUrl;
+    expect(baseUrl).toBe("https://api.dublin.ie1.twilio.com/2010-04-01/Accounts/ACIE1");
+  });
+
+  it("sets apiHostname for SSRF allowlist when edge/region are provided", () => {
+    const provider = new TwilioProvider(
+      {
+        accountSid: "ACIE1",
+        authToken: "secret",
+        edge: "dublin",
+        region: "ie1",
+      },
+      { publicUrl: "https://example.ngrok.app" },
+    );
+    const hostname = (provider as unknown as { apiHostname: string }).apiHostname;
+    expect(hostname).toBe("api.dublin.ie1.twilio.com");
+  });
+
+  it("sets apiHostname to default when edge/region are absent", () => {
+    const provider = new TwilioProvider(
+      { accountSid: "AC123", authToken: "secret" },
+      { publicUrl: "https://example.ngrok.app" },
+    );
+    const hostname = (provider as unknown as { apiHostname: string }).apiHostname;
+    expect(hostname).toBe("api.twilio.com");
+  });
+});
