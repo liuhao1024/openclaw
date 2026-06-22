@@ -156,6 +156,23 @@ describe("group runtime loading", () => {
     expect(notExplicit).not.toContain("channel identity @kesslerAIBot");
   });
 
+  it("uses 'channel' wording for ChatType channel instead of 'group chat'", () => {
+    const channelContext = groups.buildGroupChatContext({
+      sessionCtx: { ChatType: "channel", Provider: "mattermost" },
+      silentReplyPolicy: "allow",
+      silentToken: "NO_REPLY",
+    });
+    expect(channelContext).toContain("You are in a Mattermost channel.");
+    expect(channelContext).not.toContain("You are in a Mattermost group chat.");
+
+    const groupContext = groups.buildGroupChatContext({
+      sessionCtx: { ChatType: "group", Provider: "mattermost" },
+      silentReplyPolicy: "allow",
+      silentToken: "NO_REPLY",
+    });
+    expect(groupContext).toContain("You are in a Mattermost group chat.");
+  });
+
   it("marks non-visible assistant replies silent for groups with silence allowed", () => {
     expect(
       groups.resolveGroupSilentReplyBehavior({

@@ -239,8 +239,9 @@ export function buildGroupChatContext(params: {
   const messageToolOnly = params.sourceReplyDeliveryMode === "message_tool_only";
   const botUsername = normalizeOptionalString(params.sessionCtx.BotUsername);
 
+  const chatTypeLabel = params.sessionCtx.ChatType === "channel" ? "channel" : "group chat";
   const lines: string[] = [];
-  lines.push(`You are in a ${providerLabel} group chat.`);
+  lines.push(`You are in a ${providerLabel} ${chatTypeLabel}.`);
   if (params.sessionCtx.ExplicitlyMentionedBot === true && botUsername) {
     lines.push(
       `The incoming message explicitly mentions your channel identity @${botUsername}. Treat that mention as addressed to you, even if your persona name differs.`,
