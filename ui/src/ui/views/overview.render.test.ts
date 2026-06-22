@@ -221,4 +221,55 @@ describe("overview view rendering", () => {
     const quota = container.querySelector('[data-kind="quota"]');
     expect(compactText(quota)).toBe("Usage 28% left Codex · Week · Claude · 5h 40% left");
   });
+
+  it("does not count disabled cron jobs with error status as failed", async () => {
+    const container = document.createElement("div");
+    const baseJob = {
+      createdAtMs: 0,
+      updatedAtMs: 0,
+      schedule: { kind: "cron" as const, expr: "0 * * * *" },
+      sessionTarget: "isolated" as const,
+      wakeMode: "next-heartbeat" as const,
+      payload: { kind: "agentTurn" as const, message: "test" },
+    };
+    const props = createOverviewProps({
+      cronJobs: [
+        {
+          ...baseJob,
+          id: "job-enabled-error",
+          name: "Enabled Failed Job",
+          enabled: true,
+          state: { lastRunStatus: "error" as const },
+        },
+        {
+          ...baseJob,
+          id: "job-disabled-error",
+          name: "Disabled Failed Job",
+          enabled: false,
+          state: { lastRunStatus: "error" as const },
+        },
+        {
+          ...baseJob,
+          id: "job-enabled-ok",
+          name: "Enabled OK Job",
+          enabled: true,
+          state: { lastRunStatus: "ok" as const },
+        },
+      ],
+      cronStatus: { enabled: true, nextWakeAtMs: null },
+      usageResult: {
+        totals: { totalCost: 0, totalTokens: 0 },
+        aggregates: { messages: { total: 0 } },
+      } as OverviewProps["usageResult"],
+    });
+
+    render(renderOverview(props), container);
+    await Promise.resolve();
+
+    const cronCard = container.querySelector('[data-kind="cron"]');
+    expect(cronCard).not.toBeNull();
+    // Only the enabled error job should be counted; the disabled error job must be excluded.
+    expect(compactText(cronCard)).toContain("1 failed");
+    expect(compactText(cronCard)).not.toContain("2 failed");
+  });
 });

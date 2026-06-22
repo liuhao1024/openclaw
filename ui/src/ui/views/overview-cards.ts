@@ -135,7 +135,7 @@ export function renderOverviewCards(props: OverviewCardsProps) {
   const cronNext = props.cronStatus?.nextWakeAtMs ?? null;
   const cronJobCount = props.cronJobs.length;
   const failedCronCount = props.cronJobs.filter(
-    (j) => resolveCronJobLastRunStatus(j) === "error",
+    (j) => j.enabled && resolveCronJobLastRunStatus(j) === "error",
   ).length;
   const authLoading = props.modelAuthStatus === null;
   const authProviders = props.modelAuthStatus?.providers ?? [];

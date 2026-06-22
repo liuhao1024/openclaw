@@ -941,7 +941,9 @@ function buildAttentionItems(host: SettingsAppHost) {
   }
 
   const cronJobs = host.cronJobs ?? [];
-  const failedCron = cronJobs.filter((j) => resolveCronJobLastRunStatus(j) === "error");
+  const failedCron = cronJobs.filter(
+    (j) => j.enabled && resolveCronJobLastRunStatus(j) === "error",
+  );
   if (failedCron.length > 0) {
     items.push({
       severity: "error",
