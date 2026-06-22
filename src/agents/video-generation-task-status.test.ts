@@ -156,4 +156,53 @@ describe("video generation task status", () => {
     expect(context).toContain("Task task-running is currently running via openai.");
     expect(context).toContain('call `video_generate` with `action:"status"`');
   });
+
+  it("does not treat delivery-phase tasks as blocking", () => {
+    taskRuntimeInternalMocks.listTasksForOwnerKey.mockReturnValue([
+      {
+        taskId: "task-delivering",
+        runtime: "cli",
+        taskKind: VIDEO_GENERATION_TASK_KIND,
+        sourceId: "video_generate:openai",
+        requesterSessionKey: "agent:main",
+        ownerKey: "agent:main",
+        scopeKind: "session",
+        task: "make lobster video",
+        status: "running",
+        deliveryStatus: "not_applicable",
+        notifyPolicy: "silent",
+        createdAt: Date.now(),
+        progressSummary: "Media ready; delivering completion",
+      },
+    ]);
+
+    // Delivery-phase tasks should not block the active-task prompt context.
+    expect(findActiveVideoGenerationTaskForSession("agent:main")).toBeUndefined();
+    expect(buildActiveVideoGenerationTaskPromptContextForSession("agent:main")).toBeUndefined();
+  });
+
+  it("still blocks for actively generating tasks", () => {
+    taskRuntimeInternalMocks.listTasksForOwnerKey.mockReturnValue([
+      {
+        taskId: "task-generating",
+        runtime: "cli",
+        taskKind: VIDEO_GENERATION_TASK_KIND,
+        sourceId: "video_generate:openai",
+        requesterSessionKey: "agent:main",
+        ownerKey: "agent:main",
+        scopeKind: "session",
+        task: "make lobster video",
+        status: "running",
+        deliveryStatus: "not_applicable",
+        notifyPolicy: "silent",
+        createdAt: Date.now(),
+        progressSummary: "Generating video",
+      },
+    ]);
+
+    const task = findActiveVideoGenerationTaskForSession("agent:main");
+    expect(task?.taskId).toBe("task-generating");
+    const details = buildVideoGenerationTaskStatusDetails(task!);
+    expect(details.active).toBe(true);
+  });
 });

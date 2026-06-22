@@ -83,8 +83,22 @@ function mediaGenerationTaskLabelMatches(task: TaskRecord, taskLabel: string): b
   return normalizeOptionalString(task.task) === taskLabel;
 }
 
+/** Prefix used by the media generation lifecycle to indicate the task has
+ *  finished generating and is now waiting for completion delivery.  Tasks in
+ *  this phase should not block new distinct-prompt generation requests. */
+export const MEDIA_READY_DELIVERY_PREFIX = "Media ready; delivering";
+
+function isMediaGenerationTaskInDeliveryPhase(task: TaskRecord): boolean {
+  return Boolean(task.progressSummary?.startsWith(MEDIA_READY_DELIVERY_PREFIX));
+}
+
 function isTaskStillBlockingDuplicateGuard(task: TaskRecord): boolean {
-  return task.status === "queued" || task.status === "running";
+  if (task.status !== "queued" && task.status !== "running") {
+    return false;
+  }
+  // A task that has finished generating and is only waiting for completion
+  // delivery no longer needs to suppress new distinct-prompt requests.
+  return !isMediaGenerationTaskInDeliveryPhase(task);
 }
 
 function isTaskRecentSuccessfulDuplicate(params: {
