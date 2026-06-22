@@ -307,6 +307,63 @@ describe("AcpxRuntime fresh reset wrapper", () => {
     expect(ensureInput).not.toHaveProperty("thinking");
   });
 
+  it("treats non-OpenAI provider/model ids as a whole model name instead of misinterpreting as thinking effort (#95780)", async () => {
+    const baseStore: TestSessionStore = {
+      load: vi.fn(async () => undefined),
+      save: vi.fn(async () => {}),
+    };
+    const { runtime, delegate } = makeRuntime(baseStore, {
+      agentRegistry: {
+        resolve: (agentName: string) => (agentName === "codex" ? CODEX_ACP_COMMAND : agentName),
+        list: () => ["codex", "openclaw"],
+      },
+    });
+    const ensure = vi.spyOn(delegate, "ensureSession").mockResolvedValue({
+      sessionKey: "agent:codex:acp:test",
+      backend: "acpx",
+      runtimeSessionName: "codex",
+    });
+
+    // A fleet default model with provider prefix should not be split on "/"
+    // and misinterpreted as model + thinking effort.
+    await runtime.ensureSession({
+      sessionKey: "agent:codex:acp:test",
+      agent: "codex",
+      mode: "persistent",
+      model: "google/gemini-3.1-flash-lite",
+    });
+
+    // The whole provider/model string is passed through as the model name.
+    expect(readFirstEnsureSessionInput(ensure).model).toBe("google/gemini-3.1-flash-lite");
+  });
+
+  it("still parses model/reasoning-effort slash format for recognized effort levels", async () => {
+    const baseStore: TestSessionStore = {
+      load: vi.fn(async () => undefined),
+      save: vi.fn(async () => {}),
+    };
+    const { runtime, delegate } = makeRuntime(baseStore, {
+      agentRegistry: {
+        resolve: (agentName: string) => (agentName === "codex" ? CODEX_ACP_COMMAND : agentName),
+        list: () => ["codex", "openclaw"],
+      },
+    });
+    const ensure = vi.spyOn(delegate, "ensureSession").mockResolvedValue({
+      sessionKey: "agent:codex:acp:test",
+      backend: "acpx",
+      runtimeSessionName: "codex",
+    });
+
+    await runtime.ensureSession({
+      sessionKey: "agent:codex:acp:test",
+      agent: "codex",
+      mode: "persistent",
+      model: "o3/high",
+    });
+
+    expect(readFirstEnsureSessionInput(ensure).model).toBe("o3/high");
+  });
+
   it("adds Codex wrapper stderr tail to generic session initialization failures", async () => {
     const wrapperRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-acpx-runtime-"));
     const leaseStore = makeLeaseStore();

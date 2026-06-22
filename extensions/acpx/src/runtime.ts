@@ -539,8 +539,18 @@ function normalizeCodexAcpModelOverride(
     );
   }
   const model = (parts[0] ?? "").trim();
-  const modelReasoningEffort = normalizeCodexAcpReasoningEffort(parts[1]);
-  if (!model) {
+  // Only interpret the second slash-segment as a reasoning effort when it
+  // matches a recognized thinking alias.  Unrecognized values (e.g. a model
+  // name from a provider/model id like "google/gemini-3.1-flash-lite") should
+  // not be rejected as invalid thinking levels — treat the whole value as the
+  // model name instead.
+  const secondNormalized = parts[1]?.trim().toLowerCase();
+  const modelReasoningEffort =
+    secondNormalized && CODEX_ACP_THINKING_ALIASES.has(secondNormalized)
+      ? normalizeCodexAcpReasoningEffort(parts[1])
+      : undefined;
+  const effectiveModel = !modelReasoningEffort && parts.length > 1 ? value : model;
+  if (!effectiveModel) {
     failUnsupportedCodexAcpModel(
       raw,
       `Codex ACP model "${raw}" is not supported. Use openai/<model> or <model>/<reasoning-effort>.`,
@@ -551,7 +561,7 @@ function normalizeCodexAcpModelOverride(
     failUnsupportedCodexAcpThinking(reasoningEffort);
   }
   return {
-    model,
+    model: effectiveModel,
     ...(reasoningEffort ? { reasoningEffort } : {}),
   };
 }
