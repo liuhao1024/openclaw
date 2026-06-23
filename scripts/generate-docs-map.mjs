@@ -12,7 +12,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync, statSync } from "
 import { join, relative } from "node:path";
 
 const DOCS_DIR = join(process.cwd(), "docs");
-const OUTPUT_FILE = join(DOCS_DIR, "docs_map.md");
+const OUTPUT_FILE = process.argv[2] || join(DOCS_DIR, "docs_map.md");
 
 if (!existsSync(DOCS_DIR) || !statSync(DOCS_DIR).isDirectory()) {
   console.error("generate-docs-map: missing docs directory. Run from repo root.");
