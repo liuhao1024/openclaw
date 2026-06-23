@@ -1222,6 +1222,11 @@ export async function onTimer(state: CronServiceState) {
       const { id, job } = params;
       const startedAt = state.deps.nowMs();
       job.state.runningAtMs = startedAt;
+      // Persist the updated runningAtMs so crash recovery can match
+      // the persisted value to the task run id's startedAt (#96161).
+      await locked(state, async () => {
+        await persist(state);
+      });
       job.state.lastError = undefined;
       const activeJobMarker = markCronJobActive(job.id, {
         preserveAcrossGenerationAdvance: job.sessionTarget === "main",
@@ -1730,6 +1735,10 @@ async function runStartupCatchupCandidate(
   candidate: StartupCatchupCandidate,
 ): Promise<TimedCronRunOutcome> {
   const startedAt = state.deps.nowMs();
+  // Persist the updated runningAtMs so crash recovery can match
+  // the persisted value to the task run id's startedAt (#96161).
+  candidate.job.state.runningAtMs = startedAt;
+  await persist(state);
   const taskRunId = tryCreateCronTaskRun({
     state,
     job: candidate.job,
