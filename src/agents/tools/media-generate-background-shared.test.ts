@@ -61,9 +61,9 @@ describe("shouldDetachMediaGenerationTask", () => {
 });
 
 describe("scheduleMediaGenerationTaskCompletion", () => {
-  it("keeps a generated media task active until completion delivery finishes", async () => {
-    // Mark completion only after the requester wake has been attempted; otherwise
-    // task status can say done before the visible media reaches the requester.
+  it("marks task terminal before completion delivery to avoid active-task guard deadlock", async () => {
+    // Mark the task terminal before waking the requester so the active-task
+    // guard does not block the requester from processing the completion wake.
     const order: string[] = [];
     const scheduled: Array<() => Promise<void>> = [];
     const completeTaskRun = vi.fn(() => {
@@ -78,7 +78,6 @@ describe("scheduleMediaGenerationTaskCompletion", () => {
       failTaskRun: vi.fn(),
       wakeTaskCompletion: vi.fn(async () => {
         order.push("wake");
-        expect(completeTaskRun).not.toHaveBeenCalled();
         return true;
       }),
     };
@@ -112,7 +111,7 @@ describe("scheduleMediaGenerationTaskCompletion", () => {
     expect(scheduled).toHaveLength(1);
     await scheduled[0]?.();
 
-    expect(order).toEqual(["run", "progress", "wake", "complete"]);
+    expect(order).toEqual(["run", "progress", "complete", "wake"]);
     expect(lifecycle.recordTaskProgress).toHaveBeenCalledWith(
       expect.objectContaining({
         progressSummary: "Generated media; delivering completion",
@@ -122,12 +121,11 @@ describe("scheduleMediaGenerationTaskCompletion", () => {
       expect.objectContaining({
         count: 1,
         paths: ["/tmp/proof.png"],
-        terminalResult: undefined,
       }),
     );
   });
 
-  it("completes a generated media task when completion delivery cannot be confirmed", async () => {
+  it("still wakes requester even when completion delivery cannot be confirmed", async () => {
     const scheduled: Array<() => Promise<void>> = [];
     const onWakeFailure = vi.fn();
     const lifecycle = {
@@ -174,11 +172,6 @@ describe("scheduleMediaGenerationTaskCompletion", () => {
       expect.objectContaining({
         count: 1,
         paths: ["/tmp/proof.png"],
-        terminalResult: {
-          terminalOutcome: "blocked",
-          terminalSummary:
-            "Required completion delivery failed before reaching the requester: completion delivery was not confirmed after successful generation.",
-        },
       }),
     );
     expect(lifecycle.failTaskRun).not.toHaveBeenCalled();
@@ -234,11 +227,6 @@ describe("scheduleMediaGenerationTaskCompletion", () => {
       expect.objectContaining({
         count: 1,
         paths: ["/tmp/proof.png"],
-        terminalResult: {
-          terminalOutcome: "blocked",
-          terminalSummary:
-            "Required completion delivery failed before reaching the requester: requester wake failed.",
-        },
       }),
     );
     expect(lifecycle.failTaskRun).not.toHaveBeenCalled();
@@ -295,7 +283,8 @@ describe("scheduleMediaGenerationTaskCompletion", () => {
     );
     expect(lifecycle.completeTaskRun).toHaveBeenCalledWith(
       expect.objectContaining({
-        terminalResult: undefined,
+        count: 1,
+        paths: ["/tmp/proof.png"],
       }),
     );
     expect(lifecycle.failTaskRun).not.toHaveBeenCalled();

@@ -15,10 +15,7 @@ import {
   failTaskRunByRunId,
   recordTaskRunProgressByRunId,
 } from "../../tasks/detached-task-runtime.js";
-import {
-  resolveRequiredCompletionDeliveryFailureTerminalResult,
-  type RequiredCompletionTerminalResult,
-} from "../../tasks/task-completion-contract.js";
+import { type RequiredCompletionTerminalResult } from "../../tasks/task-completion-contract.js";
 import {
   deliveryContextFromSession,
   normalizeDeliveryContext,
@@ -456,63 +453,10 @@ export function scheduleMediaGenerationTaskCompletion<
         error,
       });
     }
-    let terminalResult: RequiredCompletionTerminalResult | undefined;
-    try {
-      const completionDelivered = await params.lifecycle.wakeTaskCompletion({
-        config: params.config,
-        handle: params.handle,
-        status: "ok",
-        statusLabel: "completed successfully",
-        result: executed.wakeResult,
-        attachments: executed.attachments,
-        mediaUrls: executed.mediaUrls,
-      });
-      if (!completionDelivered) {
-        // A generated result without confirmed delivery is terminally unsafe for task closeout.
-        terminalResult = resolveRequiredCompletionDeliveryFailureTerminalResult(
-          "completion delivery was not confirmed after successful generation",
-        );
-        params.onWakeFailure(
-          `${params.toolName} completion delivery was not confirmed after successful generation`,
-          {
-            taskId: params.handle?.taskId,
-            runId: params.handle?.runId,
-          },
-        );
-      }
-    } catch (error) {
-      terminalResult = resolveRequiredCompletionDeliveryFailureTerminalResult(
-        formatErrorMessage(error),
-      );
-      if (params.handle) {
-        const mediaUrls = Array.from(
-          new Set([
-            ...(executed.mediaUrls ?? []),
-            ...mediaUrlsFromGeneratedAttachments(executed.attachments),
-          ]),
-        );
-        // If the wake agent path failed after successful generation, try direct channel delivery.
-        const delivered = await tryDeliverMediaGenerationDirect({
-          config: params.config,
-          handle: params.handle,
-          toolName: params.toolName,
-          content: `${params.toolName} completed.`,
-          mediaUrls,
-          idempotencySuffix: "blocked",
-        });
-        if (delivered) {
-          terminalResult = undefined;
-        }
-      }
-      params.onWakeFailure(
-        `${params.toolName} completion wake failed after successful generation`,
-        {
-          taskId: params.handle?.taskId,
-          runId: params.handle?.runId,
-          error,
-        },
-      );
-    }
+    // Mark the task terminal before waking the requester to break the
+    // active-task guard deadlock: the requester agent cannot process the
+    // completion wake while the task is still in a non-terminal status,
+    // so wakeTaskCompletion blocks indefinitely if called first.
     try {
       params.lifecycle.completeTaskRun({
         handle: params.handle,
@@ -520,7 +464,6 @@ export function scheduleMediaGenerationTaskCompletion<
         model: executed.model,
         count: executed.count,
         paths: executed.paths,
-        terminalResult,
       });
     } catch (error) {
       params.onWakeFailure(`${params.toolName} completion state update failed`, {
@@ -532,6 +475,52 @@ export function scheduleMediaGenerationTaskCompletion<
         handle: params.handle,
         error,
       });
+    }
+    try {
+      const completionDelivered = await params.lifecycle.wakeTaskCompletion({
+        config: params.config,
+        handle: params.handle,
+        status: "ok",
+        statusLabel: "completed successfully",
+        result: executed.wakeResult,
+        attachments: executed.attachments,
+        mediaUrls: executed.mediaUrls,
+      });
+      if (!completionDelivered) {
+        params.onWakeFailure(
+          `${params.toolName} completion delivery was not confirmed after successful generation`,
+          {
+            taskId: params.handle?.taskId,
+            runId: params.handle?.runId,
+          },
+        );
+      }
+    } catch (error) {
+      if (params.handle) {
+        const mediaUrls = Array.from(
+          new Set([
+            ...(executed.mediaUrls ?? []),
+            ...mediaUrlsFromGeneratedAttachments(executed.attachments),
+          ]),
+        );
+        // If the wake agent path failed after successful generation, try direct channel delivery.
+        await tryDeliverMediaGenerationDirect({
+          config: params.config,
+          handle: params.handle,
+          toolName: params.toolName,
+          content: `${params.toolName} completed.`,
+          mediaUrls,
+          idempotencySuffix: "blocked",
+        });
+      }
+      params.onWakeFailure(
+        `${params.toolName} completion wake failed after successful generation`,
+        {
+          taskId: params.handle?.taskId,
+          runId: params.handle?.runId,
+          error,
+        },
+      );
     }
   });
 }
