@@ -1223,6 +1223,12 @@ export async function onTimer(state: CronServiceState) {
       const startedAt = state.deps.nowMs();
       job.state.runningAtMs = startedAt;
       job.state.lastError = undefined;
+      // Persist startedAt before creating the task run so that recovery on
+      // crash/restart finds lastRunAtMs === runId startedAt instead of the
+      // earlier reservation timestamp.  Without this persist the reservation
+      // clock (persisted at reserve time) diverges from the run id clock,
+      // causing interrupted runs to be swept as "lost" instead of "failed".
+      await persist(state);
       const activeJobMarker = markCronJobActive(job.id, {
         preserveAcrossGenerationAdvance: job.sessionTarget === "main",
       });
@@ -1730,6 +1736,11 @@ async function runStartupCatchupCandidate(
   candidate: StartupCatchupCandidate,
 ): Promise<TimedCronRunOutcome> {
   const startedAt = state.deps.nowMs();
+  candidate.job.state.runningAtMs = startedAt;
+  // Persist startedAt before creating the task run so that recovery on
+  // crash/restart finds lastRunAtMs === runId startedAt instead of the
+  // earlier reservation timestamp.
+  await persist(state);
   const taskRunId = tryCreateCronTaskRun({
     state,
     job: candidate.job,
