@@ -12,6 +12,7 @@ import { repairSessionFileIfNeeded } from "../session-file-repair.js";
 import {
   CURRENT_SESSION_VERSION,
   findMostRecentSession,
+  getDefaultSessionDir,
   loadEntriesFromFile,
   SessionManager,
   type SessionEntry,
@@ -2516,3 +2517,61 @@ function buildMessageEntry(index: number, parentId: string | null): SessionEntry
     message: { role: "user", content: `message ${index}`, timestamp: index },
   };
 }
+
+describe("getDefaultSessionDir encoding", () => {
+  it("produces distinct dirs for paths differing only by separator", async () => {
+    const agentDir = await makeTempDir();
+    const dirA = getDefaultSessionDir("/home/alice/dev/client/app", agentDir);
+    const dirB = getDefaultSessionDir("/home/alice/dev/client-app", agentDir);
+    expect(dirA).not.toBe(dirB);
+  });
+
+  it("produces distinct dirs for paths differing by trailing separator", async () => {
+    const agentDir = await makeTempDir();
+    const dirA = getDefaultSessionDir("/home/alice/dev", agentDir);
+    const dirB = getDefaultSessionDir("/home/alice/dev/", agentDir);
+    // Trailing separator is stripped, so these should be the same
+    expect(dirA).toBe(dirB);
+  });
+
+  it("is deterministic for the same input", async () => {
+    const agentDir = await makeTempDir();
+    const dir1 = getDefaultSessionDir("/home/alice/dev/client/app", agentDir);
+    const dir2 = getDefaultSessionDir("/home/alice/dev/client/app", agentDir);
+    expect(dir1).toBe(dir2);
+  });
+});
+
+describe("SessionManager.continueRecent cwd verification", () => {
+  it("skips session whose header cwd does not match requested cwd", async () => {
+    const agentDir = await makeTempDir();
+    const sessionDir = path.join(agentDir, "sessions", "test-cwd-verify");
+    await fs.mkdir(sessionDir, { recursive: true });
+
+    // Write a session with cwd = "/project-a" (newer mtime)
+    const headerA = buildSessionHeader("/project-a", "sess-a");
+    const fileA = path.join(sessionDir, "2026-06-24T10-00-00_A.jsonl");
+    writeFileSync(fileA, JSON.stringify(headerA) + "\n");
+
+    // Request continueRecent with a different cwd
+    const sm = SessionManager.continueRecent("/project-b", sessionDir);
+    // Should start fresh — session ID should NOT be "sess-a"
+    expect(sm.getSessionId()).not.toBe("sess-a");
+  });
+
+  it("loads session whose header cwd matches requested cwd", async () => {
+    const agentDir = await makeTempDir();
+    const sessionDir = path.join(agentDir, "sessions", "test-cwd-match");
+    await fs.mkdir(sessionDir, { recursive: true });
+
+    // Write a session with cwd = "/project-a"
+    const headerA = buildSessionHeader("/project-a", "sess-a");
+    const fileA = path.join(sessionDir, "2026-06-24T10-00-00_A.jsonl");
+    writeFileSync(fileA, JSON.stringify(headerA) + "\n");
+
+    // Request continueRecent with the same cwd
+    const sm = SessionManager.continueRecent("/project-a", sessionDir);
+    // Should load the existing session
+    expect(sm.getSessionId()).toBe("sess-a");
+  });
+});

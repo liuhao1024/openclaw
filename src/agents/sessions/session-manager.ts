@@ -437,7 +437,15 @@ export function buildSessionContext(
  * Encodes cwd into a safe directory name under ~/.openclaw/agent/sessions/.
  */
 export function getDefaultSessionDir(cwd: string, agentDir: string = getDefaultAgentDir()): string {
-  const safePath = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+  // Use an injective encoding so that paths differing only by separator
+  // (e.g. client/app vs client-app) produce distinct session directories.
+  // Strip leading/trailing separators, escape literal "--", then replace
+  // internal separators with "--".
+  const safePath = `--${cwd
+    .replace(/^[/\\\\]/, "")
+    .replace(/[/\\\\]$/, "")
+    .replace(/--/g, "~D")
+    .replace(/[/\\\\:]/g, "--")}--`;
   const sessionDir = join(agentDir, "sessions", safePath);
   if (!existsSync(sessionDir)) {
     mkdirSync(sessionDir, { recursive: true });
@@ -2923,6 +2931,15 @@ export class SessionManager {
     const dir = sessionDir ?? getDefaultSessionDir(cwd);
     const mostRecent = findMostRecentSession(dir);
     if (mostRecent) {
+      // Verify the session's recorded cwd matches the requested cwd.
+      // This guards against cross-project resume when the encoding was
+      // non-injective (old behavior) or when sessions were manually moved.
+      const entries = loadEntriesFromFile(mostRecent);
+      const header = entries.find((e) => e.type === "session");
+      const sessionCwd = typeof header?.cwd === "string" ? header.cwd : "";
+      if (sessionCwd && sessionCwd !== cwd) {
+        return new SessionManager(cwd, dir, undefined, true);
+      }
       return new SessionManager(cwd, dir, mostRecent, true);
     }
     return new SessionManager(cwd, dir, undefined, true);
