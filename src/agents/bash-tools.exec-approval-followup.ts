@@ -271,19 +271,23 @@ function buildAgentFollowupArgs(params: {
     deliver: deliveryTarget.deliver,
     ...(deliveryTarget.deliver ? { bestEffortDeliver: true as const } : {}),
     channel: deliveryTarget.deliver ? deliveryTarget.channel : fallbackChannel,
+    // When no deliverable route exists, pass turnSource routing fields so the
+    // spawned agent session can route the reply back to the originating channel.
+    // Without this, external plugin channels (non-gateway-internal) lose their
+    // routing target and replies fall through to webchat (#96103).
     to: deliveryTarget.deliver
       ? deliveryTarget.to
-      : sessionOnlyOriginChannel
+      : fallbackChannel
         ? params.turnSourceTo
         : undefined,
     accountId: deliveryTarget.deliver
       ? deliveryTarget.accountId
-      : sessionOnlyOriginChannel
+      : fallbackChannel
         ? params.turnSourceAccountId
         : undefined,
     threadId: deliveryTarget.deliver
       ? deliveryTarget.threadId
-      : sessionOnlyOriginChannel
+      : fallbackChannel
         ? params.turnSourceThreadId
         : undefined,
     idempotencyKey:

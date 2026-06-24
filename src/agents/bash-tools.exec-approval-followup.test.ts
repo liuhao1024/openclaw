@@ -16,8 +16,8 @@ vi.mock("../infra/outbound/message.js", () => ({
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { writeSessionStoreForTest } from "../config/sessions/test-helpers.js";
 import { clearSessionStoreCacheForTest } from "../config/sessions/store.js";
+import { writeSessionStoreForTest } from "../config/sessions/test-helpers.js";
 import { sendMessage } from "../infra/outbound/message.js";
 import {
   buildExecApprovalFollowupPrompt,
@@ -138,6 +138,31 @@ describe("exec approval followup", () => {
       deliver: false,
       channel: undefined,
       to: undefined,
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("preserves routing target for non-deliverable external plugin channels (fixes #96103)", async () => {
+    // External plugin channels like Lansenger are not in the built-in deliverable
+    // list, so deliveryTarget.deliver is false. The followup should still carry
+    // the turnSource routing fields so the agent session can route the reply.
+    await sendExecApprovalFollowup({
+      approvalId: "req-ext-1",
+      sessionKey: "agent:main:lansenger:user-abc",
+      turnSourceChannel: "lansenger",
+      turnSourceTo: "user-abc",
+      turnSourceAccountId: "acct-1",
+      turnSourceThreadId: "thread-99",
+      resultText: "Exec finished (gateway id=req-ext-1, code 0)\nok",
+    });
+
+    expectGatewayAgentFollowup({
+      sessionKey: "agent:main:lansenger:user-abc",
+      deliver: false,
+      channel: "lansenger",
+      to: "user-abc",
+      accountId: "acct-1",
+      threadId: "thread-99",
     });
     expect(sendMessage).not.toHaveBeenCalled();
   });
