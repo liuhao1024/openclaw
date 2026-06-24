@@ -474,6 +474,21 @@ export function buildNodeServiceEnvironment(params: {
   };
 }
 
+// Default V8 old-space ceiling for managed gateway/node services (MB).
+// Prevents OOM crash-loops on large workspaces where boot-time RSS spikes
+// past the default ~4 GB V8 ceiling before GC can finish a major sweep.
+const DEFAULT_MAX_OLD_SPACE_SIZE_MB = 8192;
+
+/** Set a safe default --max-old-space-size unless the operator already configured one. */
+function resolveNodeOptionsWithHeapDefault(existing: string | undefined): string | undefined {
+  const trimmed = existing?.trim();
+  if (trimmed && /(?:^|\s)--max-old-space-size=\d+/.test(trimmed)) {
+    return trimmed;
+  }
+  const flag = `--max-old-space-size=${DEFAULT_MAX_OLD_SPACE_SIZE_MB}`;
+  return trimmed ? `${trimmed} ${flag}` : flag;
+}
+
 function buildCommonServiceEnvironment(
   env: Record<string, string | undefined>,
   sharedEnv: SharedServiceEnvironmentFields,
@@ -481,6 +496,7 @@ function buildCommonServiceEnvironment(
   const serviceEnv: Record<string, string | undefined> = {
     HOME: env.HOME,
     TMPDIR: sharedEnv.tmpDir,
+    NODE_OPTIONS: resolveNodeOptionsWithHeapDefault(env.NODE_OPTIONS),
     NODE_EXTRA_CA_CERTS: sharedEnv.nodeCaCerts,
     NODE_USE_SYSTEM_CA: sharedEnv.nodeUseSystemCa,
     OPENCLAW_STATE_DIR: sharedEnv.stateDir,
