@@ -154,6 +154,32 @@ function coercePrimitiveByType(value: unknown, type: string): unknown {
       }
       return value;
     }
+    case "array": {
+      if (typeof value === "string" && value.trim() !== "") {
+        try {
+          const parsed: unknown = JSON.parse(value);
+          if (Array.isArray(parsed)) {
+            return parsed;
+          }
+        } catch {
+          // Not valid JSON; leave as-is for the validator to reject.
+        }
+      }
+      return value;
+    }
+    case "object": {
+      if (typeof value === "string" && value.trim() !== "") {
+        try {
+          const parsed: unknown = JSON.parse(value);
+          if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+            return parsed;
+          }
+        } catch {
+          // Not valid JSON; leave as-is for the validator to reject.
+        }
+      }
+      return value;
+    }
     case "null": {
       if (value === "" || value === 0 || value === false) {
         return null;
