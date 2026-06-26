@@ -377,7 +377,9 @@ export function buildExecApprovalPendingReplyPayload(
   }
   if (!allowedDecisions.includes("allow-always")) {
     lines.push(
-      "The effective approval policy requires approval every time, so Allow Always is unavailable.",
+      params.ask === "always"
+        ? "The effective approval policy requires approval every time, so Allow Always is unavailable."
+        : "Allow Always is unavailable because this command cannot be persisted (e.g., shell redirection or dynamic content).",
     );
   }
   const info: string[] = [];
