@@ -140,6 +140,7 @@ export type ExecToolDetails =
       cwd?: string;
       nodeId?: string;
       warningText?: string;
+      ask?: ExecAsk;
     }
   | {
       status: "approval-unavailable";
