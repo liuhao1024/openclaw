@@ -139,4 +139,30 @@ describe("validateToolArguments — stringified JSON coercion", () => {
       }),
     ).toThrow(/Validation failed for tool "array-tool"/);
   });
+
+  it("skips JSON coercion for oversized array string", () => {
+    const hugeArray = JSON.stringify(Array.from({ length: 100_000 }, (_, i) => i));
+    expect(hugeArray.length).toBeGreaterThan(64 * 1024);
+    expect(() =>
+      validateToolArguments(arrayTool, {
+        type: "toolCall",
+        id: "call-8",
+        name: "array-tool",
+        arguments: { tags: hugeArray },
+      }),
+    ).toThrow(/Validation failed for tool "array-tool"/);
+  });
+
+  it("skips JSON coercion for oversized object string", () => {
+    const hugeObj = JSON.stringify({ data: "x".repeat(70_000) });
+    expect(hugeObj.length).toBeGreaterThan(64 * 1024);
+    expect(() =>
+      validateToolArguments(objectTool, {
+        type: "toolCall",
+        id: "call-9",
+        name: "object-tool",
+        arguments: { config: hugeObj },
+      }),
+    ).toThrow(/Validation failed for tool "object-tool"/);
+  });
 });
