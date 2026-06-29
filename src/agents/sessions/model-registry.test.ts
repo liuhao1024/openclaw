@@ -345,4 +345,77 @@ describe("ModelRegistry models.json auth", () => {
     expect(registry.getError()).toBeUndefined();
     expect(registry.find("zai", "glm-5.1")).toBeUndefined();
   });
+
+  it("accepts video and audio input modalities from plugin catalog shards", () => {
+    // Providers like MiniMax and NVIDIA NIM declare video/audio input
+    // modalities in their fetched catalogs. The schema must accept these
+    // to avoid silently dropping models on gateway start.
+    const modelsPath = writeModelsJsonWithPluginCatalog({
+      root: { providers: {} },
+      pluginRelativePath: join("plugins", "minimax", PLUGIN_MODEL_CATALOG_FILE),
+      pluginCatalog: {
+        generatedBy: PLUGIN_MODEL_CATALOG_GENERATED_BY,
+        providers: {
+          minimax: {
+            baseUrl: "https://api.minimax.chat/v1",
+            api: "openai-completions",
+            apiKey: "MINIMAX_API_KEY",
+            models: [
+              {
+                id: "MiniMax-M3",
+                name: "MiniMax M3",
+                input: ["text", "image", "video"],
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const registry = ModelRegistry.create(
+      AuthStorage.inMemory({ minimax: { type: "api_key", key: "sk-test" } }),
+      modelsPath,
+      { pluginMetadataSnapshot: pluginOwnerSnapshot("minimax", "minimax") },
+    );
+
+    expect(registry.getError()).toBeUndefined();
+    const model = registry.find("minimax", "MiniMax-M3");
+    expect(model).toBeDefined();
+    expect(model?.input).toEqual(["text", "image", "video"]);
+  });
+
+  it("accepts audio input modality from plugin catalog shards", () => {
+    const modelsPath = writeModelsJsonWithPluginCatalog({
+      root: { providers: {} },
+      pluginRelativePath: join("plugins", "nvidia", PLUGIN_MODEL_CATALOG_FILE),
+      pluginCatalog: {
+        generatedBy: PLUGIN_MODEL_CATALOG_GENERATED_BY,
+        providers: {
+          nvidia: {
+            baseUrl: "https://integrate.api.nvidia.com/v1",
+            api: "openai-completions",
+            apiKey: "NVIDIA_API_KEY",
+            models: [
+              {
+                id: "microsoft/phi-4-multimodal",
+                name: "Phi-4 Multimodal",
+                input: ["text", "image", "audio"],
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const registry = ModelRegistry.create(
+      AuthStorage.inMemory({ nvidia: { type: "api_key", key: "sk-test" } }),
+      modelsPath,
+      { pluginMetadataSnapshot: pluginOwnerSnapshot("nvidia", "nvidia") },
+    );
+
+    expect(registry.getError()).toBeUndefined();
+    const model = registry.find("nvidia", "microsoft/phi-4-multimodal");
+    expect(model).toBeDefined();
+    expect(model?.input).toEqual(["text", "image", "audio"]);
+  });
 });
