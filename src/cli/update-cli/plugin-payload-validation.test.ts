@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { PluginInstallRecord } from "../../config/types.plugins.js";
 import { resolveOpenClawPackageRootSync } from "../../infra/openclaw-root.js";
 import { runPluginPayloadSmokeCheck } from "./plugin-payload-validation.js";
 
@@ -473,5 +474,72 @@ describe("runPluginPayloadSmokeCheck", () => {
       env: {},
     });
     expect(result.checked).toEqual(["npm"]);
+  });
+
+  it("accepts a clawhub bundle-plugin with .claude-plugin/plugin.json and no package.json", async () => {
+    const dir = path.join(tmpRoot, "my-bundle");
+    await fs.mkdir(path.join(dir, ".claude-plugin"), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, ".claude-plugin", "plugin.json"),
+      JSON.stringify({ name: "my-bundle", version: "1.0.0" }),
+      "utf8",
+    );
+    const result = await runPluginPayloadSmokeCheck({
+      records: {
+        "my-bundle": {
+          source: "clawhub",
+          clawhubFamily: "bundle-plugin",
+          installPath: dir,
+        } as PluginInstallRecord,
+      },
+      env: {},
+    });
+    expect(result.failures).toEqual([]);
+    expect(result.checked).toEqual(["my-bundle"]);
+  });
+
+  it("reports failure for a clawhub bundle-plugin with missing .claude-plugin/plugin.json", async () => {
+    const dir = path.join(tmpRoot, "broken-bundle");
+    await fs.mkdir(dir, { recursive: true });
+    const result = await runPluginPayloadSmokeCheck({
+      records: {
+        "broken-bundle": {
+          source: "clawhub",
+          clawhubFamily: "bundle-plugin",
+          installPath: dir,
+        } as PluginInstallRecord,
+      },
+      env: {},
+    });
+    expect(result.failures).toStrictEqual([
+      {
+        pluginId: "broken-bundle",
+        installPath: dir,
+        reason: "missing-package-json",
+        detail: `Bundle plugin manifest is missing: ${path.join(dir, ".claude-plugin", "plugin.json")}`,
+      },
+    ]);
+  });
+
+  it("reports failure for a clawhub bundle-plugin with unparseable .claude-plugin/plugin.json", async () => {
+    const dir = path.join(tmpRoot, "bad-bundle");
+    await fs.mkdir(path.join(dir, ".claude-plugin"), { recursive: true });
+    await fs.writeFile(path.join(dir, ".claude-plugin", "plugin.json"), "not-json", "utf8");
+    const result = await runPluginPayloadSmokeCheck({
+      records: {
+        "bad-bundle": {
+          source: "clawhub",
+          clawhubFamily: "bundle-plugin",
+          installPath: dir,
+        } as PluginInstallRecord,
+      },
+      env: {},
+    });
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({
+      pluginId: "bad-bundle",
+      reason: "invalid-package-json",
+    });
+    expect(result.failures[0]?.detail).toContain("Could not parse bundle plugin manifest");
   });
 });

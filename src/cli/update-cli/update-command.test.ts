@@ -405,6 +405,61 @@ describe("collectMissingPluginInstallPayloads", () => {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it("does not flag a clawhub bundle-plugin with .claude-plugin/plugin.json as missing-package-json", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-update-plugin-payload-"));
+    const bundleDir = path.join(tmpDir, "state", "clawhub", "my-bundle");
+    try {
+      await fs.mkdir(path.join(bundleDir, ".claude-plugin"), { recursive: true });
+      await fs.writeFile(
+        path.join(bundleDir, ".claude-plugin", "plugin.json"),
+        JSON.stringify({ name: "my-bundle" }),
+        "utf8",
+      );
+      await expect(
+        collectMissingPluginInstallPayloads({
+          env: { HOME: tmpDir } as NodeJS.ProcessEnv,
+          records: {
+            "my-bundle": {
+              source: "clawhub",
+              clawhubFamily: "bundle-plugin",
+              installPath: bundleDir,
+            },
+          },
+        }),
+      ).resolves.toEqual([]);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("flags a clawhub bundle-plugin missing .claude-plugin/plugin.json as missing-package-json", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-update-plugin-payload-"));
+    const bundleDir = path.join(tmpDir, "state", "clawhub", "broken-bundle");
+    try {
+      await fs.mkdir(bundleDir, { recursive: true });
+      await expect(
+        collectMissingPluginInstallPayloads({
+          env: { HOME: tmpDir } as NodeJS.ProcessEnv,
+          records: {
+            "broken-bundle": {
+              source: "clawhub",
+              clawhubFamily: "bundle-plugin",
+              installPath: bundleDir,
+            },
+          },
+        }),
+      ).resolves.toEqual([
+        {
+          pluginId: "broken-bundle",
+          installPath: bundleDir,
+          reason: "missing-package-json",
+        },
+      ]);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("shouldUseLegacyProcessRestartAfterUpdate", () => {

@@ -31,6 +31,17 @@ export type PluginPayloadSmokeResult = {
 const TRACKED_SOURCES: ReadonlySet<string> = new Set(["npm", "clawhub", "git", "marketplace"]);
 
 /**
+ * Bundle plugins (format=bundle, e.g. Claude-plugin layout with
+ * `.claude-plugin/plugin.json` and no top-level `package.json`) are
+ * tracked by ClawHub but use a different manifest structure than npm
+ * packages.  The smoke check must recognize them so it does not
+ * false-fail on the missing `package.json`.
+ */
+function isBundlePluginRecord(record: PluginInstallRecord): boolean {
+  return (record as { clawhubFamily?: string }).clawhubFamily === "bundle-plugin";
+}
+
+/**
  * Verify that each tracked plugin install record on disk is structurally
  * loadable: the install dir exists, contains a parseable `package.json`,
  * and any declared package entry files exist.
@@ -75,6 +86,35 @@ export async function runPluginPayloadSmokeCheck(params: {
         reason: "missing-package-dir",
         detail: `Install dir is missing: ${installPath}`,
       });
+      continue;
+    }
+
+    if (isBundlePluginRecord(record)) {
+      // Bundle plugins use `.claude-plugin/plugin.json` instead of
+      // `package.json`.  Verify the bundle manifest exists and is
+      // valid JSON so we catch real corruption without false-failing
+      // on the missing npm manifest.
+      const bundleManifestPath = path.join(installPath, ".claude-plugin", "plugin.json");
+      const bundleManifestStat = await safeStat(bundleManifestPath);
+      if (!bundleManifestStat?.isFile()) {
+        failures.push({
+          pluginId,
+          installPath,
+          reason: "missing-package-json",
+          detail: `Bundle plugin manifest is missing: ${bundleManifestPath}`,
+        });
+      } else {
+        try {
+          JSON.parse(await fs.readFile(bundleManifestPath, "utf8"));
+        } catch (err) {
+          failures.push({
+            pluginId,
+            installPath,
+            reason: "invalid-package-json",
+            detail: `Could not parse bundle plugin manifest: ${err instanceof Error ? err.message : String(err)}`,
+          });
+        }
+      }
       continue;
     }
 

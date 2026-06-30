@@ -576,7 +576,15 @@ export async function collectMissingPluginInstallPayloads(params: {
     }
     const packageJsonPath = path.join(installPath, "package.json");
     if (!(await pathExists(packageJsonPath))) {
-      missing.push({ pluginId, installPath, reason: "missing-package-json" });
+      // Bundle plugins use `.claude-plugin/plugin.json` instead of
+      // `package.json`.  Do not flag them as missing.
+      const bundleManifestPath = path.join(installPath, ".claude-plugin", "plugin.json");
+      if (
+        (record as { clawhubFamily?: string }).clawhubFamily !== "bundle-plugin" ||
+        !(await pathExists(bundleManifestPath))
+      ) {
+        missing.push({ pluginId, installPath, reason: "missing-package-json" });
+      }
     }
   }
   return missing;
