@@ -859,7 +859,15 @@ export const configHandlers: GatewayRequestHandlers = {
       });
       return;
     }
-    const validated = validateConfigObjectWithPlugins(restoredMerge.result);
+    // Strip injected runtime defaults (e.g. empty baseUrl) for built-in providers
+    // before validation, matching the behavior of config.apply/config.set which route
+    // through parseValidateConfigFromRawOrRespond. Without this, config.patch rejects
+    // any patch when a built-in provider has no explicit baseUrl in the source config.
+    const strippedForValidation = stripBundledProviderRuntimeDefaults({
+      candidate: restoredMerge.result,
+      sourceConfig: snapshot.sourceConfig,
+    });
+    const validated = validateConfigObjectWithPlugins(strippedForValidation);
     if (!validated.ok) {
       respond(
         false,

@@ -833,6 +833,48 @@ describe("gateway config methods", () => {
     const afterHash = await getConfigHash();
     expect(afterHash).toBe(beforeHash);
   });
+
+  it("allows config.patch when a built-in provider has no explicit baseUrl", async () => {
+    const original = await getCurrentConfigObject();
+    try {
+      // Seed a config with a built-in provider (openai) that has a models list
+      // but no explicit baseUrl. The runtime injects baseUrl: "" for built-in
+      // providers; config.apply strips it before writing, so the file should
+      // not contain baseUrl. config.patch must also strip it before validation.
+      const seededConfig = {
+        ...original.config,
+        models: {
+          ...(original.config.models as Record<string, unknown>),
+          providers: {
+            ...((original.config.models as Record<string, unknown>)?.providers as Record<
+              string,
+              unknown
+            >),
+            openai: { models: [{ id: "gpt-4o", name: "GPT-4o" }] },
+          },
+        },
+      };
+      const seed = await sendConfigApply(configRawPayload(seededConfig, original.hash));
+      expect(seed.ok).toBe(true);
+
+      // Read back the config to confirm the provider was written without baseUrl
+      const afterApply = await getCurrentConfigObject();
+
+      // Now patch an unrelated field — this should not fail with
+      // "models.providers.openai.baseUrl: Too small"
+      const res = await rpcReq<{ ok?: boolean; error?: { message?: string } }>(
+        requireWs(),
+        "config.patch",
+        {
+          raw: JSON.stringify({ agents: { defaults: { thinkingDefault: "low" } } }),
+          baseHash: afterApply.hash,
+        },
+      );
+      expect(res.ok).toBe(true);
+    } finally {
+      await restoreConfigFileForTest(original);
+    }
+  });
 });
 
 describe("gateway config.apply", () => {
