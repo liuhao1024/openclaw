@@ -9,6 +9,7 @@ import {
 } from "@openclaw/normalization-core/string-coerce";
 import { resolveStorePath } from "../config/sessions/paths.js";
 import { loadSessionStore } from "../config/sessions/store-load.js";
+import { emitInternalDiagnosticEvent } from "../infra/diagnostic-events.js";
 import {
   resolveExternalBestEffortDeliveryTarget,
   type ExternalBestEffortDeliveryTarget,
@@ -397,6 +398,12 @@ export async function sendExecApprovalFollowup(
       log.info(
         `Dropping stale denied exec approval followup ${params.approvalId}: session ${sessionKey ?? ""} was rebound before the approval resolved`,
       );
+      emitInternalDiagnosticEvent({
+        type: "exec.approval-followup.suppressed",
+        approvalId: params.approvalId,
+        sessionKey,
+        reason: "stale",
+      });
       return false;
     }
     if (
@@ -426,6 +433,12 @@ export async function sendExecApprovalFollowup(
     log.info(
       `Dropping stale exec approval followup ${params.approvalId} direct fallback: session ${sessionKey ?? ""} was rebound before the approval resolved`,
     );
+    emitInternalDiagnosticEvent({
+      type: "exec.approval-followup.suppressed",
+      approvalId: params.approvalId,
+      sessionKey,
+      reason: "stale",
+    });
     return false;
   }
 

@@ -514,6 +514,13 @@ export type DiagnosticExecProcessCompletedEvent = DiagnosticBaseEvent & {
     | "runtime-error";
 };
 
+export type DiagnosticExecApprovalFollowupSuppressedEvent = DiagnosticBaseEvent & {
+  type: "exec.approval-followup.suppressed";
+  approvalId: string;
+  sessionKey?: string;
+  reason: "stale" | "denied-subagent" | "denied-cron";
+};
+
 type DiagnosticRunBaseEvent = DiagnosticBaseEvent & {
   runId: string;
   sessionKey?: string;
@@ -769,6 +776,7 @@ export type DiagnosticEventPayload =
   | DiagnosticToolExecutionBlockedEvent
   | DiagnosticSkillUsedEvent
   | DiagnosticExecProcessCompletedEvent
+  | DiagnosticExecApprovalFollowupSuppressedEvent
   | DiagnosticRunStartedEvent
   | DiagnosticRunCompletedEvent
   | DiagnosticHarnessRunStartedEvent

@@ -13,11 +13,16 @@ vi.mock("../infra/outbound/message.js", () => ({
   sendMessage: vi.fn(async () => ({ ok: true })),
 }));
 
+vi.mock("../infra/diagnostic-events.js", () => ({
+  emitInternalDiagnosticEvent: vi.fn(),
+}));
+
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { clearSessionStoreCacheForTest } from "../config/sessions/store.js";
 import { writeSessionStoreForTest } from "../config/sessions/test-helpers.js";
+import { emitInternalDiagnosticEvent } from "../infra/diagnostic-events.js";
 import { sendMessage } from "../infra/outbound/message.js";
 import {
   buildExecApprovalFollowupPrompt,
@@ -186,6 +191,12 @@ describe("exec approval followup", () => {
     expect(result).toBe(false);
     expect(sendMessage).not.toHaveBeenCalled();
     expect(callGatewayTool).not.toHaveBeenCalled();
+    expect(emitInternalDiagnosticEvent).toHaveBeenCalledWith({
+      type: "exec.approval-followup.suppressed",
+      approvalId: "req-denied-rebound",
+      sessionKey: "agent:main:main",
+      reason: "stale",
+    });
   });
 
   it("delivers a denied direct followup when the key still resolves to the approval-time session", async () => {
@@ -227,6 +238,12 @@ describe("exec approval followup", () => {
     expect(result).toBe(false);
     expect(sendMessage).not.toHaveBeenCalled();
     expect(callGatewayTool).not.toHaveBeenCalled();
+    expect(emitInternalDiagnosticEvent).toHaveBeenCalledWith({
+      type: "exec.approval-followup.suppressed",
+      approvalId: "req-finished-rebound",
+      sessionKey: "agent:main:main",
+      reason: "stale",
+    });
   });
 
   it("routes denied followups through the originating main session", async () => {
