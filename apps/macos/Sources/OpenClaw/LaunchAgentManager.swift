@@ -71,7 +71,7 @@ enum LaunchAgentManager {
         for key in keys {
             guard let value = env[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !value.isEmpty else { continue }
-            entries += "            <key>\(key)</key>\n            <string>\(escapeXML(value))</string>\n"
+            entries += "            <key>\(key)</key>\n            <string>\(self.escapeXML(value))</string>\n"
         }
         return entries
     }
