@@ -205,8 +205,6 @@ private func configureDirectRemote(
         onboardingSkipped: true)
 }
 
-
-
 private func loadConfigRoot(from url: URL) throws -> [String: Any] {
     guard FileManager().isReadableFile(atPath: url.path) else { return [:] }
     let data = try Data(contentsOf: url)
