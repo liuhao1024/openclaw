@@ -349,23 +349,11 @@ describe("memory_search unavailable payloads", () => {
     expect(getMemoryCloseMockCalls()).toBe(1);
   });
 
-  it("forces a sync and retries once when the first search has zero hits", async () => {
+  it("returns empty results without forced sync retry when the first search has zero hits", async () => {
     let searchCalls = 0;
     setMemorySearchImpl(async () => {
       searchCalls += 1;
-      if (searchCalls === 1) {
-        return [];
-      }
-      return [
-        {
-          path: "MEMORY.md",
-          startLine: 1,
-          endLine: 1,
-          score: 0.9,
-          snippet: "Thread-hidden codename: ORBIT-22.",
-          source: "memory" as const,
-        },
-      ];
+      return [];
     });
 
     const tool = createMemorySearchToolOrThrow({
@@ -374,47 +362,35 @@ describe("memory_search unavailable payloads", () => {
         memory: { citations: "off" },
       },
     });
-    const result = await tool.execute("zero-hit-retry", { query: "hidden thread codename" });
+    const result = await tool.execute("zero-hit-no-retry", { query: "hidden thread codename" });
 
-    expect((result.details as { results?: Array<{ path: string }> }).results?.[0]?.path).toBe(
-      "MEMORY.md",
-    );
-    expect(searchCalls).toBe(2);
+    expect((result.details as { results?: Array<{ path: string }> }).results).toEqual([]);
+    expect(searchCalls).toBe(1);
   });
 
-  it("merges qmd runtime debug across zero-hit retry attempts", async () => {
+  it("returns qmd runtime debug from a single search call without retry", async () => {
     setMemoryBackend("qmd");
     let searchCalls = 0;
     setMemorySearchImpl(async (opts) => {
       searchCalls += 1;
-      if (searchCalls === 1) {
-        opts?.onDebug?.({
-          backend: "qmd",
-          configuredMode: "search",
-          effectiveMode: "search",
-          qmd: {
-            collectionValidation: {
-              cacheState: "hit",
-              elapsedMs: 2,
-              collectionCount: 2,
-              listCalls: 0,
-              showCalls: 0,
-            },
-            multiCollectionProbe: {
-              cacheState: "hit",
-              elapsedMs: 1,
-              supported: true,
-            },
-          },
-        });
-        return [];
-      }
       opts?.onDebug?.({
         backend: "qmd",
         configuredMode: "search",
         effectiveMode: "query",
         fallback: "unsupported-search-flags",
         qmd: {
+          collectionValidation: {
+            cacheState: "hit",
+            elapsedMs: 2,
+            collectionCount: 2,
+            listCalls: 0,
+            showCalls: 0,
+          },
+          multiCollectionProbe: {
+            cacheState: "hit",
+            elapsedMs: 1,
+            supported: true,
+          },
           searchPlan: {
             command: "query",
             collectionCount: 2,
@@ -423,16 +399,7 @@ describe("memory_search unavailable payloads", () => {
           },
         },
       });
-      return [
-        {
-          path: "MEMORY.md",
-          startLine: 1,
-          endLine: 1,
-          score: 0.9,
-          snippet: "Thread-hidden codename: ORBIT-22.",
-          source: "memory" as const,
-        },
-      ];
+      return [];
     });
 
     const tool = createMemorySearchToolOrThrow({
@@ -441,7 +408,7 @@ describe("memory_search unavailable payloads", () => {
         memory: { backend: "qmd", citations: "off" },
       },
     });
-    const result = await tool.execute("zero-hit-debug-retry", {
+    const result = await tool.execute("zero-hit-debug-single", {
       query: "hidden thread codename",
     });
     const details = result.details as {
@@ -452,7 +419,7 @@ describe("memory_search unavailable payloads", () => {
       };
     };
 
-    expect(searchCalls).toBe(2);
+    expect(searchCalls).toBe(1);
     expect(details.debug?.effectiveMode).toBe("query");
     expect(details.debug?.fallback).toBe("unsupported-search-flags");
     expect(details.debug?.qmd?.collectionValidation).toMatchObject({

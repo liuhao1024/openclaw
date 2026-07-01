@@ -634,7 +634,13 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
         // A fresh process can receive its first search before background watch/session
         // syncs have built the index. Force one synchronous bootstrap so the first
         // lookup after restart does not fail closed with empty results.
-        await this.sync({ reason: "search", force: true });
+        // Use a bounded timeout so the foreground search is not blocked indefinitely
+        // when the embedding provider is slow or unreachable.
+        const bootstrapTimeout = 15_000;
+        const timeoutPromise = new Promise<void>((_, reject) => {
+          setTimeout(() => reject(new Error("memory sync bootstrap timed out")), bootstrapTimeout);
+        });
+        await Promise.race([this.sync({ reason: "search", force: true }), timeoutPromise]);
       } catch (err) {
         log.warn(`memory sync failed (search-bootstrap): ${String(err)}`);
       }

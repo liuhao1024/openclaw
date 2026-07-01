@@ -566,16 +566,7 @@ export function createMemorySearchTool(options: {
                   if (pausedIndexIdentityReason) {
                     return;
                   }
-                  if (rawResults.length === 0 && activeMemory.manager.sync) {
-                    await activeMemory.manager.sync({ reason: "search", force: true });
-                    rawResults = await activeMemory.manager.search(query, searchOptions);
-                    pausedIndexIdentityReason = resolvePausedMemoryIndexIdentityReason(
-                      activeMemory.manager.status(),
-                    );
-                    if (pausedIndexIdentityReason) {
-                      return;
-                    }
-                  }
+
                   rawResults = await filterMemorySearchHitsBySessionVisibility({
                     cfg,
                     agentId,
