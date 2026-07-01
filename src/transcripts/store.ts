@@ -195,11 +195,9 @@ export class TranscriptsStore {
     const maxUtterances = normalizeMaxUtterances(options.maxUtterances);
     if (maxUtterances !== undefined) {
       const utterances: TranscriptUtterance[] = [];
+      const stream = createReadStream(transcriptPath, { encoding: "utf8" });
+      const lines = createInterface({ input: stream, crlfDelay: Infinity });
       try {
-        const lines = createInterface({
-          input: createReadStream(transcriptPath, { encoding: "utf8" }),
-          crlfDelay: Infinity,
-        });
         for await (const line of lines) {
           if (!line) {
             continue;
@@ -215,6 +213,9 @@ export class TranscriptsStore {
           return [];
         }
         throw err;
+      } finally {
+        lines.close();
+        stream.destroy();
       }
       return utterances;
     }
