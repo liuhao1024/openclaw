@@ -128,7 +128,7 @@ private func configureSSHRemote(_ opts: ConfigureRemoteOptions) throws -> Config
             userInfo: [NSLocalizedDescriptionKey: "SSH target must look like user@host[:port]"])
     }
 
-    let configURL = openClawConfigURL()
+    let configURL = resolveOpenClawConfigURL()
     var root = try loadConfigRoot(from: configURL)
     var gateway = root["gateway"] as? [String: Any] ?? [:]
     var remote = gateway["remote"] as? [String: Any] ?? [:]
@@ -174,7 +174,7 @@ private func configureDirectRemote(
             ])
     }
 
-    let configURL = openClawConfigURL()
+    let configURL = resolveOpenClawConfigURL()
     var root = try loadConfigRoot(from: configURL)
     var gateway = root["gateway"] as? [String: Any] ?? [:]
     var remote = gateway["remote"] as? [String: Any] ?? [:]
@@ -205,14 +205,7 @@ private func configureDirectRemote(
         onboardingSkipped: true)
 }
 
-private func openClawConfigURL() -> URL {
-    if let raw = ProcessInfo.processInfo.environment["OPENCLAW_CONFIG_PATH"],
-       !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    {
-        return URL(fileURLWithPath: NSString(string: raw).expandingTildeInPath)
-    }
-    return FileManager().homeDirectoryForCurrentUser.appendingPathComponent(".openclaw/openclaw.json")
-}
+
 
 private func loadConfigRoot(from url: URL) throws -> [String: Any] {
     guard FileManager().isReadableFile(atPath: url.path) else { return [:] }
