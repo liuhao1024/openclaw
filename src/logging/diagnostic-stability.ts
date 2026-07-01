@@ -431,6 +431,11 @@ function sanitizeDiagnosticEvent(event: DiagnosticEventPayload): DiagnosticStabi
       record.failureKind = event.failureKind;
       assignReasonCode(record, event.failureKind);
       break;
+    case "exec.approval-followup.suppressed":
+      record.target = event.approvalId;
+      record.source = event.sessionKey;
+      record.outcome = event.reason;
+      break;
     case "run.started":
       record.provider = event.provider;
       record.model = event.model;
