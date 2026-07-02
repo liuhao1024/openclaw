@@ -7,7 +7,7 @@ enum OpenClawConfigFile {
     private static let configAuditFileName = "config-audit.jsonl"
     private static let configHealthFileName = "config-health.json"
     private static let fileLock = NSRecursiveLock()
-    private static nonisolated(unsafe) var cachedConfigHealthState: [String: Any]?
+    private nonisolated(unsafe) static var cachedConfigHealthState: [String: Any]?
 
     private static func withFileLock<T>(_ body: () throws -> T) rethrows -> T {
         self.fileLock.lock()
