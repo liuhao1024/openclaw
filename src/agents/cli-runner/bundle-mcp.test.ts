@@ -214,4 +214,53 @@ describe("prepareCliBundleMcpConfig", () => {
     expect(prepared.backend.args).toEqual(["./fake-cli.mjs"]);
     expect(prepared.cleanup).toBeUndefined();
   });
+
+  it("merges all variadic --mcp-config files into the bundle overlay", async () => {
+    const workspaceDir = await cliBundleMcpHarness.tempHarness.createTempDir(
+      "openclaw-cli-bundle-mcp-variadic-",
+    );
+
+    // Write two separate user MCP config files.
+    const configA = path.join(workspaceDir, "a.json");
+    const configB = path.join(workspaceDir, "b.json");
+    await fs.writeFile(
+      configA,
+      JSON.stringify({
+        mcpServers: { serverA: { command: "node", args: ["./a.mjs"] } },
+      }),
+      "utf-8",
+    );
+    await fs.writeFile(
+      configB,
+      JSON.stringify({
+        mcpServers: { serverB: { command: "node", args: ["./b.mjs"] } },
+      }),
+      "utf-8",
+    );
+
+    const prepared = await prepareCliBundleMcpConfig({
+      enabled: true,
+      mode: "claude-config-file",
+      backend: {
+        command: "node",
+        args: ["./fake-claude.mjs", "--mcp-config", "a.json", "b.json"],
+      },
+      workspaceDir,
+      config: { plugins: { enabled: false } },
+    });
+
+    // Both user config servers should appear in the merged overlay.
+    const generatedConfigPath = requireMcpConfigPath(prepared.backend.args);
+    const raw = JSON.parse(await fs.readFile(generatedConfigPath, "utf-8")) as {
+      mcpServers?: Record<string, unknown>;
+    };
+    expect(raw.mcpServers).toHaveProperty("serverA");
+    expect(raw.mcpServers).toHaveProperty("serverB");
+
+    // The original --mcp-config args should be stripped (no bare "a.json"/"b.json").
+    expect(prepared.backend.args).not.toContain("a.json");
+    expect(prepared.backend.args).not.toContain("b.json");
+
+    await prepared.cleanup?.();
+  });
 });
