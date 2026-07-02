@@ -7,6 +7,7 @@ enum OpenClawConfigFile {
     private static let configAuditFileName = "config-audit.jsonl"
     private static let configHealthFileName = "config-health.json"
     private static let fileLock = NSRecursiveLock()
+    nonisolated(unsafe) private static var cachedConfigHealthState: [String: Any]?
 
     private static func withFileLock<T>(_ body: () throws -> T) rethrows -> T {
         self.fileLock.lock()
@@ -484,6 +485,9 @@ enum OpenClawConfigFile {
     }
 
     private static func readConfigHealthState() -> [String: Any] {
+        if let cached = self.cachedConfigHealthState {
+            return cached
+        }
         let url = self.configHealthStateURL()
         guard let data = try? Data(contentsOf: url),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -494,20 +498,12 @@ enum OpenClawConfigFile {
     }
 
     private static func writeConfigHealthState(_ root: [String: Any]) {
-        guard JSONSerialization.isValidJSONObject(root),
-              let data = try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
-        else {
-            return
-        }
-        let url = self.configHealthStateURL()
-        do {
-            try FileManager().createDirectory(
-                at: url.deletingLastPathComponent(),
-                withIntermediateDirectories: true)
-            try data.write(to: url, options: [.atomic])
-        } catch {
-            // best-effort
-        }
+        // No-op for disk: Node core ≥2026.6.x owns config-health state in the shared
+        // SQLite config_health_entries table. Writing to the legacy JSON path prevented
+        // migrateLegacyConfigHealth from completing and caused conflict warnings on
+        // every CLI/gateway bootstrap. See #98917.
+        // Keep in-memory cache so anomaly detection still works within a session.
+        self.cachedConfigHealthState = root
     }
 
     private static func configHealthEntry(state: [String: Any], configPath: String) -> [String: Any] {
