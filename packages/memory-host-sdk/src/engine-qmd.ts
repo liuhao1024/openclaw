@@ -5,6 +5,7 @@ export {
   buildSessionEntry,
   listSessionFilesForAgent,
   listSessionTranscriptCorpusEntriesForAgent,
+  listSessionTranscriptCorpusEntriesForAgentSync,
   loadDreamingNarrativeTranscriptPathSetForAgent,
   loadSessionTranscriptClassificationForAgent,
   normalizeSessionTranscriptPathForComparison,

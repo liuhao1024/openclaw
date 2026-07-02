@@ -22,6 +22,7 @@ import {
   isUsageCountedSessionTranscriptFileName,
   listSessionFilesForAgent,
   listSessionTranscriptCorpusEntriesForAgent,
+  listSessionTranscriptCorpusEntriesForAgentSync,
   parseCanonicalSessionSyncTargetFromPath,
   resolveSessionFileForSyncTarget,
   sessionPathForFile,
@@ -1501,25 +1502,27 @@ export abstract class MemoryManagerSyncOps {
    * initialization. Sets sessionsDirty when on-disk session files have no
    * corresponding memory_index_sources rows, so plain `memory status`
    * reports accurate dirty state without performing a full sync.
+   *
+   * Uses the session corpus listing (same contract as startup catch-up) so
+   * configured/fixed custom session stores and ownership filtering are respected.
    */
   protected detectSessionStartupDirtySync(): void {
     if (!this.sources.has("sessions")) {
       return;
     }
     try {
-      const sessionsDir = resolveSessionTranscriptsDirForAgent(this.agentId);
-      if (!fsSync.existsSync(sessionsDir)) {
+      const corpusEntries = listSessionTranscriptCorpusEntriesForAgentSync(this.agentId);
+      if (corpusEntries.length === 0) {
         return;
       }
-      const entries = fsSync.readdirSync(sessionsDir, { withFileTypes: true });
       const sessionFiles: MemorySessionStartupFileState[] = [];
-      for (const entry of entries) {
-        if (!entry.isFile() || !isUsageCountedSessionTranscriptFileName(entry.name)) {
-          continue;
-        }
-        const absPath = path.join(sessionsDir, entry.name);
+      for (const entry of corpusEntries) {
+        const absPath = entry.sessionFile;
         try {
           const stat = fsSync.statSync(absPath);
+          if (!stat.isFile()) {
+            continue;
+          }
           sessionFiles.push({
             absPath,
             path: sessionPathForFile(absPath),
@@ -1527,7 +1530,7 @@ export abstract class MemoryManagerSyncOps {
             size: stat.size,
           });
         } catch {
-          // File may have been deleted between readdir and stat; skip.
+          // File may have been deleted between corpus listing and stat; skip.
         }
       }
       if (sessionFiles.length === 0) {
