@@ -1,6 +1,5 @@
 /** Doctor checks and repair effects for cached shell completion setup. */
 import { spawnSync } from "node:child_process";
-import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { note } from "../../packages/terminal-core/src/note.js";
@@ -26,15 +25,6 @@ const COMPLETION_CACHE_WRITE_TIMEOUT_MS = 30_000;
 export type ShellCompletionStatusOptions = {
   shell?: CompletionShell;
 };
-
-async function isProfileWritable(profilePath: string): Promise<boolean> {
-  try {
-    await fs.access(profilePath, fsConstants.W_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function isEaccesError(err: unknown): boolean {
   return err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code === "EACCES";
@@ -217,7 +207,7 @@ export async function doctorShellCompletion(
       if (isEaccesError(err)) {
         const profilePath = resolveCompletionProfilePath(status.shell);
         note(
-          `Shell completion not upgraded: ${profilePath} is not writable. Run \`${cliName} completion install\` against a writable profile file.`,
+          `Shell completion not upgraded: ${profilePath} is not writable. Run \`${cliName} completion --install\` against a writable profile file.`,
           "Shell completion",
         );
         return;
@@ -256,14 +246,6 @@ export async function doctorShellCompletion(
 
     if (shouldInstall) {
       const profilePath = resolveCompletionProfilePath(status.shell);
-      if (!(await isProfileWritable(profilePath))) {
-        note(
-          `Shell completion not installed: ${profilePath} is not writable. Run \`${cliName} completion install\` against a writable profile file.`,
-          "Shell completion",
-        );
-        return;
-      }
-
       const generated = await generateCompletionCache();
       if (!generated) {
         note(
@@ -279,7 +261,7 @@ export async function doctorShellCompletion(
       } catch (err) {
         if (isEaccesError(err)) {
           note(
-            `Shell completion not installed: ${profilePath} is not writable. Run \`${cliName} completion install\` against a writable profile file.`,
+            `Shell completion not installed: ${profilePath} is not writable. Run \`${cliName} completion --install\` against a writable profile file.`,
             "Shell completion",
           );
           return;
