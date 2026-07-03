@@ -75,6 +75,52 @@ final class DashboardWindowController: NSWindowController, WKNavigationDelegate,
         }
     }
 
+    /// Bridges `window.alert()` calls in the embedded Control UI to a native
+    /// `NSAlert` sheet; without this delegate method WebKit silently drops the
+    /// request and the user sees no feedback.
+    func webView(
+        _ webView: WKWebView,
+        runJavaScriptAlertPanelWithMessage message: String,
+        initiatedByFrame frame: WKFrameInfo,
+        completionHandler: @escaping @MainActor @Sendable () -> Void)
+    {
+        let alert = NSAlert()
+        alert.messageText = "OpenClaw"
+        alert.informativeText = message
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        if let window = self.window {
+            alert.beginSheetModal(for: window) { _ in completionHandler() }
+        } else {
+            alert.runModal()
+            completionHandler()
+        }
+    }
+
+    /// Bridges `window.confirm()` calls in the embedded Control UI to a native
+    /// `NSAlert` sheet; without this delegate method WebKit returns `undefined`
+    /// (falsy), causing confirmations like session deletion to silently bail out.
+    func webView(
+        _ webView: WKWebView,
+        runJavaScriptConfirmPanelWithMessage message: String,
+        initiatedByFrame frame: WKFrameInfo,
+        completionHandler: @escaping @MainActor @Sendable (Bool) -> Void)
+    {
+        let alert = NSAlert()
+        alert.messageText = "OpenClaw"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+        if let window = self.window {
+            alert.beginSheetModal(for: window) { response in
+                completionHandler(response == .alertFirstButtonReturn)
+            }
+        } else {
+            completionHandler(alert.runModal() == .alertFirstButtonReturn)
+        }
+    }
+
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
