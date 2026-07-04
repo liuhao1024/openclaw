@@ -19,6 +19,7 @@ import {
   NODE_PRESENCE_ALIVE_EVENT,
   normalizeNodePresenceAliveReason,
 } from "../shared/node-presence.js";
+import { sliceUtf16Safe } from "../shared/utf16-slice.js";
 import type { NodeEvent, NodeEventContext } from "./server-node-events-types.js";
 import {
   agentCommandFromIngress,
@@ -236,7 +237,7 @@ function compactExecEventOutput(raw: string) {
     return normalized;
   }
   const safe = Math.max(1, MAX_EXEC_EVENT_OUTPUT_CHARS - 1);
-  return `${normalized.slice(0, safe)}…`;
+  return `${sliceUtf16Safe(normalized, 0, safe)}…`;
 }
 
 function compactNotificationEventText(raw: string) {
@@ -248,7 +249,7 @@ function compactNotificationEventText(raw: string) {
     return normalized;
   }
   const safe = Math.max(1, MAX_NOTIFICATION_EVENT_TEXT_CHARS - 1);
-  return `${normalized.slice(0, safe)}…`;
+  return `${sliceUtf16Safe(normalized, 0, safe)}…`;
 }
 
 type LoadedSessionEntry = ReturnType<typeof loadSessionEntry>;
