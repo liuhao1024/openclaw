@@ -50,10 +50,60 @@ type ProviderAllowFromResolution = {
 type OwnerAuthorizationState = {
   allowAll: boolean;
   ownerAllowAll: boolean;
-  ownerCandidatesForCommands: string[];
+  ownerCandidatesForCommands: Set<string>;
   explicitOwners: string[];
   ownerList: string[];
+  ownerSet: Set<string>;
 };
+
+/**
+ * Pre-indexed ownerAllowFrom entries partitioned by channel prefix.
+ * Built once per raw array reference, then reused for O(1) per-provider lookups.
+ */
+type OwnerAllowFromIndex = {
+  /** Entries with no channel prefix (apply to all providers). */
+  unscoped: string[];
+  /** Entries scoped to a specific channel prefix. */
+  byChannel: Map<string, string[]>;
+};
+
+const ownerAllowFromIndexCache = new WeakMap<Array<string | number>, OwnerAllowFromIndex>();
+
+function buildOwnerAllowFromIndex(raw: Array<string | number>): OwnerAllowFromIndex {
+  const existing = ownerAllowFromIndexCache.get(raw);
+  if (existing) {
+    return existing;
+  }
+  const unscoped: string[] = [];
+  const byChannel = new Map<string, string[]>();
+  for (const entry of raw) {
+    const trimmed = normalizeOptionalString(String(entry ?? "")) ?? "";
+    if (!trimmed) {
+      continue;
+    }
+    const separatorIndex = trimmed.indexOf(":");
+    if (separatorIndex > 0) {
+      const prefix = trimmed.slice(0, separatorIndex);
+      const channel = normalizeAnyChannelId(prefix);
+      if (channel) {
+        const remainder = trimmed.slice(separatorIndex + 1).trim();
+        if (remainder) {
+          let bucket = byChannel.get(channel);
+          if (!bucket) {
+            bucket = [];
+            byChannel.set(channel, bucket);
+          }
+          bucket.push(remainder);
+        }
+        continue;
+      }
+    }
+    unscoped.push(trimmed);
+  }
+  const index: OwnerAllowFromIndex = { unscoped, byChannel };
+  ownerAllowFromIndexCache.set(raw, index);
+  return index;
+}
 
 function resolveProviderFromContext(
   ctx: MsgContext,
@@ -280,29 +330,14 @@ function resolveOwnerAllowFromList(params: {
   if (!Array.isArray(raw) || raw.length === 0) {
     return [];
   }
-  const filtered: string[] = [];
-  for (const entry of raw) {
-    const trimmed = normalizeOptionalString(String(entry ?? "")) ?? "";
-    if (!trimmed) {
-      continue;
+  // Use pre-indexed lookup: O(1) per-provider instead of O(n) iteration.
+  const index = buildOwnerAllowFromIndex(raw);
+  const filtered: string[] = [...index.unscoped];
+  if (params.providerId) {
+    const scoped = index.byChannel.get(params.providerId);
+    if (scoped) {
+      filtered.push(...scoped);
     }
-    const separatorIndex = trimmed.indexOf(":");
-    if (separatorIndex > 0) {
-      const prefix = trimmed.slice(0, separatorIndex);
-      const channel = normalizeAnyChannelId(prefix);
-      if (channel) {
-        // Channel-prefixed entries require a known matching provider; webchat leaves it unset.
-        if (!params.providerId || channel !== params.providerId) {
-          continue;
-        }
-        const remainder = trimmed.slice(separatorIndex + 1).trim();
-        if (remainder) {
-          filtered.push(remainder);
-        }
-        continue;
-      }
-    }
-    filtered.push(trimmed);
   }
   return formatAllowFromList({
     plugin: params.plugin,
@@ -354,13 +389,13 @@ function resolveOwnerCandidatesForCommands(params: {
   to?: string;
   allowAll: boolean;
   allowFromList: string[];
-}): string[] {
+}): Set<string> {
   if (params.allowAll) {
-    return [];
+    return new Set();
   }
   const ownerCandidatesForCommands = stripWildcardAllowFrom(params.allowFromList);
   if (ownerCandidatesForCommands.length > 0 || !params.to) {
-    return ownerCandidatesForCommands;
+    return new Set(ownerCandidatesForCommands);
   }
   const normalizedTo = normalizeAllowFromEntry({
     plugin: params.plugin,
@@ -368,7 +403,9 @@ function resolveOwnerCandidatesForCommands(params: {
     accountId: params.accountId,
     value: params.to,
   });
-  return normalizedTo.length > 0 ? [...ownerCandidatesForCommands, ...normalizedTo] : [];
+  return normalizedTo.length > 0
+    ? new Set([...ownerCandidatesForCommands, ...normalizedTo])
+    : new Set(ownerCandidatesForCommands);
 }
 
 function resolveOwnerAuthorizationState(params: {
@@ -427,6 +464,7 @@ function resolveOwnerAuthorizationState(params: {
     ownerCandidatesForCommands,
     explicitOwners,
     ownerList,
+    ownerSet: new Set(ownerList),
   };
 }
 
@@ -658,13 +696,11 @@ export function resolveCommandAuthorization(params: {
     from,
     chatType: ctx.ChatType,
   });
-  const matchedSender = ownerState.ownerList.length
-    ? senderCandidates.find((candidate) => ownerState.ownerList.includes(candidate))
+  const matchedSender = ownerState.ownerSet.size
+    ? senderCandidates.find((candidate) => ownerState.ownerSet.has(candidate))
     : undefined;
-  const matchedCommandOwner = ownerState.ownerCandidatesForCommands.length
-    ? senderCandidates.find((candidate) =>
-        ownerState.ownerCandidatesForCommands.includes(candidate),
-      )
+  const matchedCommandOwner = ownerState.ownerCandidatesForCommands.size
+    ? senderCandidates.find((candidate) => ownerState.ownerCandidatesForCommands.has(candidate))
     : undefined;
   const senderId = matchedSender ?? senderCandidates[0];
 
