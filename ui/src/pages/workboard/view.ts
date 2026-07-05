@@ -1877,7 +1877,15 @@ function renderCardDetailsPanel(props: WorkboardProps) {
   const automation = card.metadata?.automation;
   const events = (card.events ?? []).slice(-6).toReversed();
   const busy = state.busyCardIds.has(card.id) || state.dispatching;
+  const session = findWorkboardSession(card, props.sessions);
+  const activeTask = cardHasActiveOrRunningUnresolvedTask(card, task, state.missingTaskIds);
+  const live =
+    activeTask ||
+    cardHasUnresolvedStartedRun(card) ||
+    session?.hasActiveRun === true ||
+    (session?.hasActiveRun !== false && session?.status === "running");
   const showStartControls = writable && cardCanStart(state, props.sessions, card);
+  const archived = Boolean(card.metadata?.archivedAt);
   const dependencies = getWorkboardDependencyState(card, state.cards);
   return html`
     <aside
@@ -2081,6 +2089,23 @@ function renderCardDetailsPanel(props: WorkboardProps) {
         </section>
 
         <div class="workboard-detail__actions">
+          ${writable && !archived
+            ? html`
+                <button
+                  class="btn"
+                  type="button"
+                  ?disabled=${state.dispatching}
+                  @click=${(event: MouseEvent) => {
+                    rememberWorkboardReturnFocus(event.currentTarget);
+                    closeCardDetails(state);
+                    openEditModal(state, card);
+                    props.onRequestUpdate?.();
+                  }}
+                >
+                  ${icons.edit} ${t("workboard.editCard")}
+                </button>
+              `
+            : nothing}
           ${linkedSessionKey
             ? html`
                 <button
@@ -2093,6 +2118,63 @@ function renderCardDetailsPanel(props: WorkboardProps) {
               `
             : nothing}
           ${showStartControls ? renderStartExecutionControls(props, card) : nothing}
+          ${writable && (linkedSessionKey ? live : activeTask)
+            ? html`
+                <button
+                  class="btn"
+                  type="button"
+                  ?disabled=${busy || !props.connected}
+                  @click=${() =>
+                    stopWorkboardCard({
+                      host: props.host,
+                      client: props.client,
+                      card,
+                      requestUpdate: props.onRequestUpdate,
+                    })}
+                >
+                  ${icons.stop} ${t("workboard.stopSession")}
+                </button>
+              `
+            : nothing}
+          ${writable ? renderCardMoveControl(props, card, busy) : nothing}
+          ${writable
+            ? html`
+                <button
+                  class="btn"
+                  type="button"
+                  ?disabled=${busy}
+                  @click=${() =>
+                    archiveWorkboardCard({
+                      host: props.host,
+                      client: props.client,
+                      cardId: card.id,
+                      archived: !archived,
+                      requestUpdate: props.onRequestUpdate,
+                    })}
+                >
+                  ${archived ? icons.archiveRestore : icons.archive}
+                  ${archived ? t("workboard.unarchiveCard") : t("workboard.archiveCard")}
+                </button>
+              `
+            : nothing}
+          ${writable
+            ? html`
+                <button
+                  class="btn danger"
+                  type="button"
+                  ?disabled=${busy}
+                  @click=${() =>
+                    deleteWorkboardCard({
+                      host: props.host,
+                      client: props.client,
+                      cardId: card.id,
+                      requestUpdate: props.onRequestUpdate,
+                    })}
+                >
+                  ${icons.trash} ${t("workboard.deleteCard")}
+                </button>
+              `
+            : nothing}
         </div>
       </div>
     </aside>

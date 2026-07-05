@@ -618,8 +618,10 @@
   display: flex;
   flex-direction: column;
   min-width: 292px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: hidden;
   scroll-snap-align: start;
+  contain: layout style;
 }
 
 .workboard-column--drop {
@@ -682,6 +684,8 @@
   gap: 10px;
   align-content: start;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .workboard-empty-state {

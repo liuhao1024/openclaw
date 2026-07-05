@@ -1194,6 +1194,71 @@ describe("renderWorkboard", () => {
     expect(onOpenSession).not.toHaveBeenCalled();
   });
 
+  it("renders edit, archive, move, stop, and delete actions in the detail drawer", async () => {
+    const host = {} as Record<string, unknown>;
+    const state = getWorkboardState(host);
+    state.loaded = true;
+    state.cards = [
+      {
+        id: "card-1",
+        title: "Card with full actions",
+        status: "running",
+        priority: "normal",
+        labels: [],
+        position: 1000,
+        createdAt: 1,
+        updatedAt: 1,
+        sessionKey: "agent:main:dashboard:1",
+      },
+    ];
+    const container = document.createElement("div");
+    document.body.append(container);
+    const props: WorkboardRenderProps = {
+      host,
+      client: null,
+      connected: true,
+      pluginEnabled: true,
+      agentsList: null,
+      sessions: [
+        {
+          key: "agent:main:dashboard:1",
+          kind: "direct",
+          displayName: "Dashboard session",
+          updatedAt: 2,
+          hasActiveRun: true,
+          status: "running",
+        },
+      ],
+      onOpenSession: () => undefined,
+      onRequestUpdate: () => renderInto(container, props),
+    };
+
+    try {
+      renderInto(container, props);
+      const launcher = container.querySelector<HTMLButtonElement>(
+        "button[aria-label='View details']",
+      );
+      expect(launcher).toBeInstanceOf(HTMLButtonElement);
+      launcher?.click();
+      await nextFrame();
+
+      const actions = container.querySelector(".workboard-detail__actions");
+      expect(actions).toBeTruthy();
+
+      const buttonTexts = Array.from(actions!.querySelectorAll("button")).map((b) =>
+        b.textContent?.trim(),
+      );
+      // Should include edit, open session, stop, archive, and delete buttons
+      expect(buttonTexts.some((t) => t?.includes("Edit"))).toBe(true);
+      expect(buttonTexts.some((t) => t?.includes("Open session"))).toBe(true);
+      expect(buttonTexts.some((t) => t?.includes("Stop"))).toBe(true);
+      expect(buttonTexts.some((t) => t?.includes("Archive"))).toBe(true);
+      expect(buttonTexts.some((t) => t?.includes("Delete"))).toBe(true);
+    } finally {
+      container.remove();
+    }
+  });
+
   it("keeps focus inside the card modal and restores focus on Escape", async () => {
     const host = {};
     const state = getWorkboardState(host);
