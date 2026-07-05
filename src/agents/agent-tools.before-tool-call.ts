@@ -89,6 +89,7 @@ export {
   isToolWrappedWithBeforeToolCallHook,
   setBeforeToolCallDiagnosticsEnabled,
 } from "./before-tool-call-metadata.js";
+import { GatewayClientRequestError } from "../gateway/client.js";
 import { copyChannelAgentToolMeta, getChannelAgentToolMeta } from "./channel-tools.js";
 import {
   getCodeModeExecBeforeHookMetadata,
@@ -857,11 +858,15 @@ async function requestPluginToolApproval(params: {
       };
     }
     log.warn(`plugin approval gateway request failed; blocking tool call: ${String(err)}`);
+    const reason =
+      err instanceof GatewayClientRequestError && err.gatewayCode !== "UNAVAILABLE"
+        ? `Plugin approval request failed: ${err.message}`
+        : "Plugin approval required (gateway unavailable)";
     return {
       blocked: true,
       kind: "failure",
       deniedReason: "plugin-approval",
-      reason: "Plugin approval required (gateway unavailable)",
+      reason,
       params: params.baseParams,
     };
   }
