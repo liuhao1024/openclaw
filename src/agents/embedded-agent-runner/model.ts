@@ -60,6 +60,17 @@ import {
   resolveBundledStaticCatalogModel,
 } from "./model.static-catalog.js";
 
+/**
+ * Legacy provider ids that should get auth-check guidance instead of
+ * config-entry guidance when a model is missing.  These ids were used
+ * before the provider was folded into a canonical bundled provider
+ * (e.g. `openai-codex` → `openai`).  Doctor/migrations repair stale
+ * profiles, but the hint should still point operators at auth rather
+ * than config — adding a `models.providers[]` entry for a legacy id
+ * is actively harmful (issue #100066).
+ */
+const LEGACY_PROVIDER_IDS_AUTH_HINT = new Set(["openai-codex"].map(normalizeProviderId));
+
 type ProviderRuntimeHooks = {
   applyProviderResolvedTransportWithPlugin?: (
     params: Parameters<typeof applyProviderResolvedTransportWithPlugin>[0],
@@ -1935,8 +1946,16 @@ function buildMissingProviderModelRegistrationHint(params: {
   // missing models.providers[] config entry.  Pointing operators at config is
   // actively harmful: the config validator rejects overlays without baseUrl for
   // non-bundled ids, creating contradictory guidance (issue #100066).
-  if (isBuiltInModelProviderOverlayId(params.provider)) {
-    return `Found agents.defaults.models["${agentModelKey}"], but the bundled provider "${params.provider}" has no registered model "${params.modelId}". This usually means the provider has no authenticated profile — run \`openclaw models status\` to check provider auth and re-authenticate if needed. See https://docs.openclaw.ai/concepts/model-providers.`;
+  //
+  // Legacy provider ids (e.g. `openai-codex`) also get auth-check guidance
+  // because doctor/migrations will repair stale profiles, and adding a
+  // `models.providers[]` entry for a legacy id is actively harmful.
+  const normalizedProvider = normalizeProviderId(params.provider);
+  if (
+    isBuiltInModelProviderOverlayId(params.provider) ||
+    LEGACY_PROVIDER_IDS_AUTH_HINT.has(normalizedProvider)
+  ) {
+    return `Found agents.defaults.models["${agentModelKey}"], but the provider "${params.provider}" has no registered model "${params.modelId}". This usually means the provider has no authenticated profile — run \`openclaw models status\` to check provider auth and re-authenticate if needed. See https://docs.openclaw.ai/concepts/model-providers.`;
   }
   const providerConfig = findNormalizedProviderValue(
     params.cfg?.models?.providers,
