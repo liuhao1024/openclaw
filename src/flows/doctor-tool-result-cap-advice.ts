@@ -19,6 +19,15 @@ export type ToolResultCapDoctorIssue = {
   target?: string;
 };
 
+export const COMPACTION_CONFIG_CHECK_ID = "core/doctor/compaction-config";
+
+export type CompactionConfigDoctorIssue = {
+  kind: "byte-guard-without-truncate";
+  maxActiveTranscriptBytes: number | string;
+  path?: string;
+  scopeLabel?: string;
+};
+
 // Doctor advice for explicit live tool-result caps that fight model-window defaults.
 export type ToolResultCapDoctorAdviceParams = {
   contextWindowTokens: number;
@@ -159,4 +168,53 @@ export function buildToolResultCapDoctorAdvice(params: ToolResultCapDoctorAdvice
   );
 
   return lines;
+}
+
+export type CompactionConfigDoctorAdviceParams = {
+  maxActiveTranscriptBytes?: number | string;
+  truncateAfterCompaction?: boolean;
+  path?: string;
+  scopeLabel?: string;
+};
+
+export function collectCompactionConfigDoctorIssues(
+  params: CompactionConfigDoctorAdviceParams,
+): CompactionConfigDoctorIssue[] {
+  if (
+    params.maxActiveTranscriptBytes !== undefined &&
+    (params.truncateAfterCompaction === false || params.truncateAfterCompaction === undefined)
+  ) {
+    return [
+      {
+        kind: "byte-guard-without-truncate",
+        maxActiveTranscriptBytes: params.maxActiveTranscriptBytes,
+        path: params.path,
+        scopeLabel: params.scopeLabel,
+      },
+    ];
+  }
+  return [];
+}
+
+export function compactionConfigDoctorIssueToHealthFinding(
+  issue: CompactionConfigDoctorIssue,
+): HealthFinding {
+  const prefix = issue.scopeLabel ? `${issue.scopeLabel}: ` : "";
+  return {
+    checkId: COMPACTION_CONFIG_CHECK_ID,
+    severity: "warning",
+    message: `${prefix}maxActiveTranscriptBytes is set (${issue.maxActiveTranscriptBytes}) but truncateAfterCompaction is ${issue.kind === "byte-guard-without-truncate" ? "false" : "unset"}; this byte-guard will never trigger. Set truncateAfterCompaction to true or unset maxActiveTranscriptBytes.`,
+    ...(issue.path ? { path: issue.path } : {}),
+    requirement: issue.kind,
+    fixHint: "Set truncateAfterCompaction to true or unset maxActiveTranscriptBytes.",
+  };
+}
+
+export function buildCompactionConfigDoctorAdvice(
+  params: CompactionConfigDoctorAdviceParams,
+): string[] {
+  return collectCompactionConfigDoctorIssues(params).map((issue) => {
+    const prefix = issue.scopeLabel ? `${issue.scopeLabel}: ` : "";
+    return `- ${prefix}maxActiveTranscriptBytes is set (${issue.maxActiveTranscriptBytes}) but truncateAfterCompaction is false or unset; this byte-guard will never trigger. Set truncateAfterCompaction to true or unset maxActiveTranscriptBytes.`;
+  });
 }

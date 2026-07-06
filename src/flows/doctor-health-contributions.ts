@@ -796,6 +796,13 @@ type ToolResultCapTarget = {
   target?: string;
 };
 
+type CompactionConfigTarget = {
+  maxActiveTranscriptBytes?: number | string;
+  truncateAfterCompaction?: boolean;
+  path?: string;
+  scopeLabel: string;
+};
+
 async function collectToolResultCapFindings(
   cfg: OpenClawConfig,
 ): Promise<readonly HealthFinding[]> {
@@ -1970,6 +1977,47 @@ export function resolveDoctorHealthContributions(): DoctorHealthContribution[] {
         detect: async (ctx) => collectToolResultCapFindings(ctx.cfg),
       },
       run: runToolResultCapHealth,
+    }),
+    createDoctorHealthContribution({
+      id: "doctor:compaction-config",
+      label: "Compaction config",
+      healthChecks: {
+        id: "core/doctor/compaction-config",
+        description: "Detect maxActiveTranscriptBytes set without truncateAfterCompaction.",
+        defaultEnabled: true,
+        detect: async (ctx) => {
+          const targets: CompactionConfigTarget[] = [];
+          const defaults = ctx.cfg.agents?.defaults?.compaction;
+          if (defaults) {
+            targets.push({
+              maxActiveTranscriptBytes: defaults.maxActiveTranscriptBytes,
+              truncateAfterCompaction: defaults.truncateAfterCompaction,
+              scopeLabel: "defaults",
+            });
+          }
+          for (const entry of ctx.cfg.agents?.list ?? []) {
+            const agentCompaction = entry.compaction;
+            if (!agentCompaction) {
+              continue;
+            }
+            targets.push({
+              maxActiveTranscriptBytes: agentCompaction.maxActiveTranscriptBytes,
+              truncateAfterCompaction: agentCompaction.truncateAfterCompaction,
+              scopeLabel: `agent "${entry.id}"`,
+            });
+          }
+          const {
+            collectCompactionConfigDoctorIssues,
+            compactionConfigDoctorIssueToHealthFinding,
+          } = await import("./doctor-tool-result-cap-advice.js");
+          return targets.flatMap((target) =>
+            collectCompactionConfigDoctorIssues(target).map(
+              compactionConfigDoctorIssueToHealthFinding,
+            ),
+          );
+        },
+      },
+      run: runCompactionConfigHealth,
     }),
     createDoctorHealthContribution({
       id: "doctor:provider-catalog-projection",
