@@ -3437,6 +3437,15 @@ export const chatHandlers: GatewayRequestHandlers = {
     const ops = createChatAbortOps(context);
     const requester = resolveChatAbortRequester(client);
 
+    // Load the session entry to get the stored sessionId, which provides
+    // the same abort identity that /stop uses. Without this, chat.abort
+    // may miss active runs that were registered under the canonical session id.
+    const abortSessionLoadOptions = abortAgentId ? { agentId: abortAgentId } : undefined;
+    const { entry: abortSessionEntry } = loadSessionEntry(
+      canonicalAbortSessionKey,
+      abortSessionLoadOptions,
+    );
+
     if (!runId) {
       const res = await abortChatRunsForSessionKeyWithPartials({
         context,
@@ -3444,6 +3453,7 @@ export const chatHandlers: GatewayRequestHandlers = {
         sessionKey: canonicalAbortSessionKey,
         sessionKeyAliases: canonicalAbortSessionKey === rawSessionKey ? undefined : [rawSessionKey],
         agentId: abortAgentId,
+        sessionId: abortSessionEntry?.sessionId,
         defaultAgentId,
         abortOrigin: "rpc",
         stopReason: "rpc",
