@@ -82,6 +82,17 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
         // Stream stdout and stderr.
         child.stdout?.on("data", onData);
         child.stderr?.on("data", onData);
+
+        // Handle stream errors (e.g., broken pipe) to prevent process crash.
+        // Stream errors can occur when the child process is killed abruptly.
+        // We attach handlers here because Node.js throws if 'error' is unhandled.
+        const onStreamError = (err: Error) => {
+          // Swallow the error. The child process exit code will be captured
+          // by waitForChildProcess below.
+        };
+        child.stdout?.on("error", onStreamError);
+        child.stderr?.on("error", onStreamError);
+
         // Handle abort signal by killing the entire process tree.
         const onAbort = () => {
           if (child.pid) {
