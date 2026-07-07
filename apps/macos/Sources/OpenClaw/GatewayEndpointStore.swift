@@ -191,13 +191,43 @@ actor GatewayEndpointStore {
             return GatewayRemoteConfig.resolveTokenString(root: root)
         }
 
-        if let gateway = root["gateway"] as? [String: Any],
-           let auth = gateway["auth"] as? [String: Any],
-           let token = auth["token"] as? String
-        {
-            return token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let gateway = root["gateway"] as? [String: Any],
+              let auth = gateway["auth"] as? [String: Any],
+              let token = auth["token"] as? String
+        else {
+            return nil
         }
-        return nil
+
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        return resolvePlaceholders(in: trimmed)
+    }
+
+    /// Resolves environment variable placeholders (e.g., ${OPENCLAW_GATEWAY_TOKEN}) in a token string.
+    /// - Returns the resolved token if all placeholders can be resolved, or nil if any placeholder references an unset environment variable.
+    private static func resolvePlaceholders(in token: String) -> String? {
+        let pattern = #"\$\{([A-Za-z_][A-Za-z0-9_]*)\}"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return token
+        }
+
+        var resolved = token
+        var hasUnresolvedPlaceholders = false
+
+        regex.enumerateMatches(in: token, range: NSRange(token.startIndex..., in: token)) { match, _, _ in
+            guard let match = match,
+                  let varNameRange = Range(match.range(at: 1), in: token) else {
+                return
+            }
+
+            let varName = String(token[varNameRange])
+            if let envValue = ProcessInfo.processInfo.environment[varName] {
+                resolved = resolved.replacingOccurrences(of: "${\(varName)}", with: envValue)
+            } else {
+                hasUnresolvedPlaceholders = true
+            }
+        }
+
+        return hasUnresolvedPlaceholders ? nil : resolved
     }
 
     private static func warnEnvOverrideOnce(
@@ -701,19 +731,43 @@ extension GatewayEndpointStore {
         if let token = tokenCandidate?.trimmingCharacters(in: .whitespacesAndNewlines),
            !token.isEmpty
         {
-            // Detect and reject unresolved environment variable placeholders (e.g., ${OPENCLAW_GATEWAY_TOKEN})
-            let pattern = #"\\$\\{([A-Za-z_][A-Za-z0-9_]*)\\}"#
-            if let regex = try? NSRegularExpression(pattern: pattern, options: []),
-               let match = regex.firstMatch(in: token, range: NSRange(token.startIndex..., in: token)),
-               let varNameRange = Range(match.range(at: 1), in: token),
-               ProcessInfo.processInfo.environment[String(token[varNameRange])] == nil {
-                throw NSError(
-                    domain: "Dashboard",
-                    code: 3,
-                    userInfo: [NSLocalizedDescriptionKey: "Dashboard token contains an unresolved environment variable placeholder \\(String(token[varNameRange])). Please either set the environment variable or provide a literal token in the configuration."]
-                )
+            // Defensive guard: reject tokens with unresolved placeholders.
+            // This should never happen for tokens from resolveGatewayToken, which
+            // resolves placeholders at the resolver level. But if someone constructs
+            // a config directly with placeholders, we handle it here.
+            let pattern = #"\$\{([A-Za-z_][A-Za-z0-9_]*)\}"#
+            if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+                let resolved = NSMutableString(string: token)
+                var hasUnresolvedPlaceholders = false
+
+                regex.enumerateMatches(in: token, range: NSRange(token.startIndex..., in: token)) { match, _, _ in
+                    guard let match = match,
+                          let varNameRange = Range(match.range(at: 1), in: token) else {
+                        return
+                    }
+
+                    let varName = String(token[varNameRange])
+                    let placeholder = "${\(varName)}"
+                    if let envValue = ProcessInfo.processInfo.environment[varName] {
+                        resolved.replaceOccurrences(of: placeholder, with: envValue, options: [], range: NSRange(location: 0, length: resolved.length))
+                    } else {
+                        hasUnresolvedPlaceholders = true
+                    }
+                }
+
+                if hasUnresolvedPlaceholders {
+                    throw NSError(
+                        domain: "Dashboard",
+                        code: 3,
+                        userInfo: [NSLocalizedDescriptionKey: "Dashboard token contains an unresolved environment variable placeholder. Please either set the environment variable or provide a literal token in the configuration."]
+                    )
+                }
+
+                fragmentItems.append(URLQueryItem(name: "token", value: resolved as String))
+            } else {
+                // If regex fails, use the token as-is
+                fragmentItems.append(URLQueryItem(name: "token", value: token))
             }
-            fragmentItems.append(URLQueryItem(name: "token", value: token))
         }
         components.queryItems = nil
         if fragmentItems.isEmpty {
