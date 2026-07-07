@@ -377,6 +377,8 @@ export async function handleSessionHistoryHttpRequest(
       });
     });
   });
+  req.on("error", cleanup);
+  res.on("error", cleanup);
   req.on("close", cleanup);
   res.on("close", cleanup);
   res.on("finish", cleanup);
