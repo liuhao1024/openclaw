@@ -1830,6 +1830,19 @@ async function runWithModelFallbackInternal<T>(
           lane: params.lane,
         });
         lastError = switchNormalized;
+        if (params.sessionId && candidates[i + 1] && switchNormalized instanceof FailoverError) {
+          emitFailoverEvent({
+            sessionId: params.sessionId,
+            lane: params.lane,
+            fromProvider: candidate.provider,
+            fromModel: candidate.model,
+            toProvider: candidates[i + 1].provider,
+            toModel: candidates[i + 1].model,
+            reason: switchNormalized.reason,
+            cascadeDepth: i + 1,
+            suspended: false,
+          });
+        }
         await observeFailedCandidate({
           attempts,
           candidate,
@@ -1875,6 +1888,19 @@ async function runWithModelFallbackInternal<T>(
       }
 
       lastError = isKnownFailover ? normalized : err;
+      if (params.sessionId && candidates[i + 1] && normalized instanceof FailoverError) {
+        emitFailoverEvent({
+          sessionId: params.sessionId,
+          lane: params.lane,
+          fromProvider: candidate.provider,
+          fromModel: candidate.model,
+          toProvider: candidates[i + 1].provider,
+          toModel: candidates[i + 1].model,
+          reason: normalized.reason,
+          cascadeDepth: i + 1,
+          suspended: false,
+        });
+      }
       await observeFailedCandidate({
         attempts,
         candidate,
