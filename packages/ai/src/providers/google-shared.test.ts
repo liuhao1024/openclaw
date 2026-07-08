@@ -6,6 +6,7 @@ import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "../utils/system-prompt-cache-boundary.js";
 import {
   buildGoogleGenerateContentParams,
+  buildGoogleSimpleThinking,
   consumeGoogleGenerateContentStream,
 } from "./google-shared.js";
 
@@ -248,5 +249,36 @@ describe("buildGoogleGenerateContentParams", () => {
 
     expect(params.config?.systemInstruction).toBe("Stable\nDynamic");
     expect(JSON.stringify(params)).not.toContain("OPENCLAW_CACHE_BOUNDARY");
+  });
+});
+
+describe("buildGoogleSimpleThinking", () => {
+  // Non-reasoning model: clampThinkingLevel clamps any non-"off" level to "off".
+  const nonReasoningModel: Model<"google-generative-ai"> = {
+    ...model,
+    id: "gemini-1.5-pro",
+    name: "Gemini 1.5 Pro",
+    reasoning: false,
+  };
+
+  it("disables thinking when clampThinkingLevel returns off for non-reasoning models", () => {
+    // Before the fix, clamped "off" was mapped to "high" effort and enabled
+    // thinking for models that cannot support it. After the fix, "off" returns
+    // disabled thinking immediately.
+    const result = buildGoogleSimpleThinking(nonReasoningModel, {
+      reasoning: "low",
+    });
+
+    expect(result.enabled).toBe(false);
+    expect(result.budgetTokens).toBeUndefined();
+    expect(result.level).toBeUndefined();
+  });
+
+  it("disables thinking when reasoning is explicitly off", () => {
+    const result = buildGoogleSimpleThinking(model, {
+      reasoning: "off",
+    });
+
+    expect(result.enabled).toBe(false);
   });
 });
