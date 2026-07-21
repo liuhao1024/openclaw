@@ -5,17 +5,20 @@
  */
 import { timestampMsToIsoString } from "@openclaw/normalization-core/number-coercion";
 import { isRecord } from "../../utils.js";
+import { isStringOption } from "../../utils/string-readers.js";
 
 const CRON_SCHEDULE_KINDS = ["at", "every", "cron", "on-exit"] as const;
-const CRON_PAYLOAD_KINDS = ["systemEvent", "agentTurn"] as const;
+const CRON_PAYLOAD_KINDS = ["systemEvent", "agentTurn", "script"] as const;
 const CRON_FLAT_PAYLOAD_KEYS = [
   "message",
   "text",
+  "script",
   "model",
   "fallbacks",
   "toolsAllow",
   "thinking",
   "timeoutSeconds",
+  "toolBudget",
   "lightContext",
   "allowUnsafeExternalContent",
 ] as const;
@@ -37,7 +40,12 @@ const CRON_FLAT_SCHEDULE_KEYS = [
 ] as const;
 const CRON_RECOVERABLE_OBJECT_KEYS: ReadonlySet<string> = new Set([
   "name",
+  "declarationKey",
+  "displayName",
+  "owner",
   "schedule",
+  "pacing",
+  "trigger",
   "sessionTarget",
   "wakeMode",
   "payload",
@@ -56,11 +64,11 @@ const CRON_RECOVERABLE_OBJECT_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 function isCronScheduleKind(value: unknown): value is (typeof CRON_SCHEDULE_KINDS)[number] {
-  return typeof value === "string" && (CRON_SCHEDULE_KINDS as readonly string[]).includes(value);
+  return isStringOption(value, CRON_SCHEDULE_KINDS);
 }
 
 function isCronPayloadKind(value: unknown): value is (typeof CRON_PAYLOAD_KINDS)[number] {
-  return value === "systemEvent" || value === "agentTurn";
+  return value === "systemEvent" || value === "agentTurn" || value === "script";
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -230,20 +238,23 @@ function canonicalizeCronToolPayload(value: Record<string, unknown>): void {
   }
 
   if (!isCronPayloadKind(payload.kind)) {
-    const hasAgentTurnSignal =
-      isNonEmptyString(payload.message) ||
-      isNonEmptyString(payload.model) ||
-      payload.model === null ||
-      isNonEmptyString(payload.thinking) ||
-      typeof payload.timeoutSeconds === "number" ||
-      typeof payload.lightContext === "boolean" ||
-      typeof payload.allowUnsafeExternalContent === "boolean" ||
-      (payload.fallbacks !== undefined && isStringArrayOrNull(payload.fallbacks)) ||
-      (payload.toolsAllow !== undefined && isStringArrayOrNull(payload.toolsAllow));
-    if (hasAgentTurnSignal) {
-      payload.kind = "agentTurn";
-    } else if (isNonEmptyString(payload.text)) {
-      payload.kind = "systemEvent";
+    if (isNonEmptyString(payload.script)) {
+      payload.kind = "script";
+    } else {
+      const hasAgentTurnSignal =
+        isNonEmptyString(payload.message) ||
+        isNonEmptyString(payload.model) ||
+        payload.model === null ||
+        isNonEmptyString(payload.thinking) ||
+        typeof payload.timeoutSeconds === "number" ||
+        typeof payload.lightContext === "boolean" ||
+        typeof payload.allowUnsafeExternalContent === "boolean" ||
+        (payload.fallbacks !== undefined && isStringArrayOrNull(payload.fallbacks));
+      if (hasAgentTurnSignal) {
+        payload.kind = "agentTurn";
+      } else if (isNonEmptyString(payload.text)) {
+        payload.kind = "systemEvent";
+      }
     }
   }
 
